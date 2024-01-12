@@ -8,183 +8,119 @@
  * This file contains the declaration of the global params needed by Noxim
  * to forward configuration to every sub-block
  */
+/*\\\********************************************************************************
+ * Downloaded March 23, 2022 from
+ * https://github.com/davidepatti/noxim/tree/c52ebce2217e57bcd4ff11a97b400323bd00acd5
+ ************************************************************************************
+ *
+ * McAERsim - NoC simulator with tree-based multicast support for AER packets
+ * Modifications Copyright (C) 2022-2023 Forschungszentrum Juelich GmbH, ZEA-2
+ * Author: Markus Robens <https://www.fz-juelich.de/profile/robens_m>
+ * For the license applied to these modifications and McAERsim as a whole
+ * refer to file ../doc/LICENSE_MCAERSIM.txt
+ * 
+ * 2022-09-11: McAERsim uses less preprocessor constants than Noxim.
+ *             Also, there is no support for virtual channels or wireless
+ *             connections. Respective structs and preprocessor defines are 
+ *             thus removed. Preprocessor constants representing directions 
+ *             are replaced by an enum. Struct RouterPowerConfig is adapted 
+ *             to reflect the modified router architecture. The set of global 
+ *             parameters is modified accordingly. 
+ *
+ *///******************************************************************************** 
 
-#ifndef __NOXIMGLOBALPARAMS_H__
-#define __NOXIMGLOBALPARAMS_H__ 
+#ifndef __MCAERSIMGLOBALPARAMS_H__
+#define __MCAERSIMGLOBALPARAMS_H__
 
 #include <map>
-#include <utility>
-#include <vector>
 #include <string>
+#include "DataStructs.h"
+#include <boost/tuple/tuple_comparison.hpp>
 
-using namespace std;
+#ifndef NO_PES
+#define NO_PES 1
+#endif /* NO_PES */
+#define INVALID -1
 
-#define CONFIG_FILENAME        "config.yaml"
-#define POWER_CONFIG_FILENAME  "power.yaml"
-
-// Define the directions as numbers
-#define DIRECTIONS              4
-#define DIRECTION_NORTH         0
-#define DIRECTION_EAST          1
-#define DIRECTION_SOUTH         2
-#define DIRECTION_WEST          3
-#define DIRECTION_LOCAL         4
-#define DIRECTION_HUB           5
-#define DIRECTION_HUB_RELAY     5000
-#define DIRECTION_WIRELESS    747
-
-#define MAX_VIRTUAL_CHANNELS	8
-#define DEFAULT_VC 		0
-
-#define RT_AVAILABLE 1
-#define RT_ALREADY_SAME -1
-#define RT_ALREADY_OTHER_OUT -2
-#define RT_OUTVC_BUSY -3
-
-// Generic not reserved resource
-#define NOT_RESERVED          -2
-
-// To mark invalid or non exhistent values
-#define NOT_VALID             -1
-
-//Topologies
-#define TOPOLOGY_MESH          "MESH"
-//Delta Networks Topologies
-#define TOPOLOGY_BASELINE      "BASELINE"
-#define TOPOLOGY_BUTTERFLY     "BUTTERFLY"
-#define TOPOLOGY_OMEGA         "OMEGA"
-
-// Routing algorithms
-#define ROUTING_DYAD           "DYAD"
-#define ROUTING_TABLE_BASED    "TABLE_BASED"
-
-
-// Channel selection 
-#define CHSEL_RANDOM 0
-#define CHSEL_FIRST_FREE 1
-
-// Traffic distribution
-#define TRAFFIC_RANDOM         "TRAFFIC_RANDOM"
-#define TRAFFIC_TRANSPOSE1     "TRAFFIC_TRANSPOSE1"
-#define TRAFFIC_TRANSPOSE2     "TRAFFIC_TRANSPOSE2"
-#define TRAFFIC_HOTSPOT        "TRAFFIC_HOTSPOT"
-#define TRAFFIC_TABLE_BASED    "TRAFFIC_TABLE_BASED"
-#define TRAFFIC_BIT_REVERSAL   "TRAFFIC_BIT_REVERSAL"
-#define TRAFFIC_SHUFFLE        "TRAFFIC_SHUFFLE"
-#define TRAFFIC_BUTTERFLY      "TRAFFIC_BUTTERFLY"
-#define TRAFFIC_LOCAL	       "TRAFFIC_LOCAL"
-#define TRAFFIC_ULOCAL	       "TRAFFIC_ULOCAL"
-
-// Verbosity levels
-#define VERBOSE_OFF            "VERBOSE_OFF"
-#define VERBOSE_LOW            "VERBOSE_LOW"
-#define VERBOSE_MEDIUM         "VERBOSE_MEDIUM"
-#define VERBOSE_HIGH           "VERBOSE_HIGH"
-
-
-// Wireless MAC constants
-#define RELEASE_CHANNEL 1
-#define HOLD_CHANNEL 	2
-
-#define TOKEN_HOLD             "TOKEN_HOLD"
-#define TOKEN_MAX_HOLD         "TOKEN_MAX_HOLD"
-#define TOKEN_PACKET           "TOKEN_PACKET"
-
-typedef struct {
-    pair<double, double> ber;
-    int dataRate;
-    vector<string> macPolicy;
-} ChannelConfig;
-
-typedef struct {
-    vector<int> attachedNodes;
-    vector<int> rxChannels;
-    vector<int> txChannels;
-    int toTileBufferSize;
-    int fromTileBufferSize;
-    int txBufferSize;
-    int rxBufferSize;
-} HubConfig;
-
-typedef struct {
-    map<pair <int, int>, double> front;
-    map<pair <int, int>, double> pop;
-    map<pair <int, int>, double> push;
-    map<pair <int, int>, double> leakage;
+typedef struct
+{
+  std::map<std::pair<int, int>, double> front;
+  std::map<std::pair<int, int>, double> pop;
+  std::map<std::pair<int, int>, double> push;
+  std::map<std::pair<int, int>, double> leakage;
 } BufferPowerConfig;
 
-typedef map<double, pair <double, double> > LinkBitLinePowerConfig;
+typedef std::map<double, std::pair<double, double> > LinkBitLinePowerConfig;
 
-typedef struct {
-    map<pair<double, double>, pair<double, double> > crossbar_pm;
-    map<int, pair<double, double> > network_interface;
-    map<string, pair<double, double> > routing_algorithm_pm;
-    map<string, pair<double, double> > selection_strategy_pm;
+typedef struct
+{
+  std::map<boost::tuples::tuple<int, int, int>, std::pair<double, double> > crossbar_pm;
+  std::map<int, std::pair<double, double> > network_interface;
+  std::map<int, std::pair<double, double> > arbitration_pm;
+  std::map<int, std::pair<double, double> > tcam_pm;
+  std::map<int, std::pair<double, double> > sram_pm;
 } RouterPowerConfig;
 
-typedef struct {
-    pair<double, double> transceiver_leakage;
-    pair<double, double> transceiver_biasing;
-    double rx_dynamic;
-    double rx_snooping;
-    double default_tx_energy;
-    map<pair <int, int>, double> transmitter_attenuation_map;
-} HubPowerConfig;
-
-typedef struct {
-    BufferPowerConfig bufferPowerConfig;
-    LinkBitLinePowerConfig linkBitLinePowerConfig;
-    RouterPowerConfig routerPowerConfig;
-    HubPowerConfig hubPowerConfig;
+typedef struct
+{
+  BufferPowerConfig bufferPowerConfig;
+  LinkBitLinePowerConfig linkBitLinePowerConfig;
+  RouterPowerConfig routerPowerConfig;
 } PowerConfig;
 
 struct GlobalParams {
-    static string verbose_mode;
-    static int trace_mode;
-    static string trace_filename;
-    static string topology;
-    static int mesh_dim_x;
-    static int mesh_dim_y;
-    static int n_delta_tiles;
-    static double r2r_link_length;
-    static double r2h_link_length;
-    static int buffer_depth;
-    static int flit_size;
-    static int min_packet_size;
-    static int max_packet_size;
-    static string routing_algorithm;
-    static string routing_table_filename;
-    static string selection_strategy;
-    static double packet_injection_rate;
-    static double probability_of_retransmission;
-    static double locality;
-    static string traffic_distribution;
-    static string traffic_table_filename;
-    static string config_filename;
-    static string power_config_filename;
-    static int clock_period_ps;
-    static int simulation_time;
-    static int n_virtual_channels;
-    static int reset_time;
-    static int stats_warm_up_time;
-    static int rnd_generator_seed;
-    static bool detailed;
-    static vector <pair <int, double> > hotspots;
-    static double dyad_threshold;
-    static unsigned int max_volume_to_be_drained;
-    static bool show_buffer_stats;
-    static bool use_winoc;
-    static int winoc_dst_hops;
-    static bool use_powermanager;
-    static ChannelConfig default_channel_configuration;
-    static map<int, ChannelConfig> channel_configuration;
-    static HubConfig default_hub_configuration;
-    static map<int, HubConfig> hub_configuration;
-    static map<int, int> hub_for_tile;
-    static PowerConfig power_configuration;
-    // out of yaml configuration
-    static bool ascii_monitor;
-    static int channel_selection;
+  // General configuration
+  static std::string config_filename;
+  static std::string power_config_filename;
+  // Topology parameters
+  static std::string topology;
+  static int mesh_dim_x;
+  static int mesh_dim_y;
+  static int proc_arr_dim_x;
+  static int proc_arr_dim_y;
+  static int neurons_per_node;
+  static double r2r_link_length;
+  // Buffer stetup
+  static int evt_width;
+  static int buffer_depth;
+  static int dl_threshold;
+  // Power management
+  static PowerConfig power_configuration;
+  // Simulation setup
+  static int clock_period_ps;
+  static int reset_time;
+  static int stats_warm_up_time;
+  static int simulation_time;
+  static int rnd_generator_seed;
+  static std::string routing_table_filename;
+  // NEST related file parameters
+  static double nest_time_multiplier;
+  static double nest_t_presim;
+  static int nest_spk_det_skip_lines;
+  static std::string gnat_method;
+  static std::string gnat_string;
+  // Reporting
+  static std::string verbose_mode;
+  static std::string output_file_suffix;
+  static bool create_output_files;
+  static bool show_buffer_stats;
+  // Debugging
+  static bool detailed;
+  // Expendable definitions
+  //static std::map<int, PEconfig> pe_configuration;
 };
 
-#endif
+enum
+{
+ DIRECTION_NORTH,
+ DIRECTION_EAST,
+ DIRECTION_SOUTH,
+ DIRECTION_WEST,
+ DIRECTIONS
+};
+
+#define RADIX (DIRECTIONS + NO_PES)
+#define CONFIG_FILENAME "config.yaml"
+#define POWER_CONFIG_FILENAME "power.yaml"
+
+#endif /* __MCAERSIMGLOBALPARAMS_H__ */

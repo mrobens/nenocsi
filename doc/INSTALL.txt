@@ -1,124 +1,297 @@
-Noxim - the NoC Simulator
-=========================
+================================================================================================
+*
+* Noxim - the NoC Simulator
+*
+* (C) 2005-2018 by the University of Catania
+* For the complete list of authors refer to file ./AUTHORS.txt
+* For the license applied to these sources refer to file ./LICENSE.txt
+*
+************************************************************************************************
+* Downloaded March 23, 2022 from
+* https://github.com/davidepatti/noxim/tree/c52ebce2217e57bcd4ff11a97b400323bd00acd5
+************************************************************************************************
+*
+* McAERsim - NoC simulator with tree-based multicast support for AER packets
+* Modifications Copyright (C) 2023 Forschungszentrum Juelich GmbH, ZEA-2
+* Author: Markus Robens <https://www.fz-juelich.de/profile/robens_m>
+* For the license applied to these modifications and McAERsim as a whole
+* refer to file ./LICENSE_MCAERSIM.txt
+*
+* 2023-02-16: These are the installation instructions for setting up a framework to enable      
+*             co-simulations between NEST and McAERsim. Compared to INSTALL.txt of Noxim,
+*             only expedited steps to install McAERsim (and RTparser) on Ubuntu-20.04.2 LTS
+*             are provided. A larger fraction is dedicated to the installation of NEST under
+*             the same conditions (and according to one of the multiple installation types)
+*             as well as the necessary modifications to enable the co-simulations.
+*
+================================================================================================
 
-Installation instructions
--------------------------
-
-This guide will show you how to install Noxim on your computer.
-
-IMPORTANT:
-
-If you have not tried yet, use the automatic installation script found on the Noxim homepage and
-just skip all the instructions below.
-
+Note: If the installation of NENoCSi and McAERsim is intended, respective libraries
+      need to be installed only once. During the installation of the second simulator,
+      you can skip through the library installation sections and only perform copying
+      as well as compilation of those parts that have not been installed before.
 
 Supported Platforms
 -------------------
 
-Noxim is written using the C++ language and the SystemC library, so it is easily portable to
-any platform for which SystemC is supported: please refer to their (SystemC) documentation to
-know which they are. Just to let you know, we usually work under GNU/Linux (mainly Ubuntu)
-but SystemC is known to run under other platforms including Apple Mac OS X and Sun Solaris
-with GCC and Microsoft Windows with Visual C++ (but Cygwin with GCC is also known to work).
+Below you will find the instructions to set up the different simulators that are part of the
+framework in an expedited way. They were tested using a minimal installation of Ubuntu 20.04.2.
+However, both simulators are portable, so that different other platform should be supported
+as well. For more detailed installation instructions, please consult the documentation of the
+single simulators.
 
-On latest Windows version, you may try also the Windows Linux Subsystem (WSL).
+McAERsim can be installed in the same way as Noxim. Detailed installation instructons of Noxim
+are located at
 
-This document will then detail the steps required to build Noxim from the sources, including
-all prerequisites.
+  https://github.com/davidepatti/noxim/blob/master/doc/INSTALL.txt
 
+For NEST, you can find detailed installation instructions at
 
-PREREQUISITES: C++ compiler, YAML (with Boost Libraries), SystemC
+  https://nest-simulator.readthedocs.io/en/v3.1/installation/index.html                   or
+  https://nest-simulator.readthedocs.io/en/v3.1/installation/linux_install.html
 
-C++ compiler installation
-----------------------------------
-To compile SystemC you will obviously need a C++ compiler; if you still don't have it, on
- Debian/Ubuntu platforms you may install all the required tools with the following command:
+Installation of McAERsim
+------------------------
 
-   sudo apt-get install build-essential
+McAERsim depends on a very limited number of libraries that all are provided by the operating
+system. Some may already be installed on your system; you only need to add those that are not
+present. Here, we assume to start from a fresh minimal installation. The following table
+contains the library names as well as the commands that are necessary to install them. Some
+may have dependencies, so that you will be queried to confirm the installation of additional
+packages.
+Note: McAERsim is loosely based on commit c52ebce2217e57bcd4ff11e97b400323bd00acd5 of Noxim
+      and has been updated according to commit afb4aa0c7e81aa37f023b46a9bbc2856a4ae6b2f.
 
-YAML installation
-----------------------------------
-The name of the package depends on the Unix version you are using.
+  ----------------------------------------------------------------------------------
+  | Library                      | Command                                         |
+  |--------------------------------------------------------------------------------|
+  |                              |                                                 |
+  | C++ compiler and build tools | sudo apt install build-essential                |
+  |                              |                                                 |
+  | YAML-CPP                     | sudo apt install libyaml-cpp-dev                |
+  |                              |                                                 |
+  | Boost libraries              | sudo apt install libboost-dev                   |
+  |                              |                                                 |
+  | Boost filesystem libraries   | sudo apt install libboost-filesystem-dev        |
+  |                              |                                                 |
+  | SystemC                      | sudo apt install libsystemc libsystemc-dev      |
+  |                              |                                                 |
+  | xutils (for makedepend)      | sudo apt install xutils-dev                     |
+  |                              |                                                 |
+  ----------------------------------------------------------------------------------
 
-On Ubuntu 14.04, for example, it is possible to install yaml (and the required boost 
-libraries) with:
+All of them may be installed at once by issuing
 
-    sudo apt-get install libyaml-cpp-dev libboost-dev
+sudo apt install -y build-essential libyaml-cpp-dev libboost-dev libboost-filesystem-dev \
+libsystemc libsystemc-dev xutils-dev
 
-    If the packet libyaml-cpp-dev is not available just build yaml-cpp:
-    Prerequisites:
-    - CMake
-        sudo apt-get install cmake
+This way, only system libraries are used to build McAERsim. Therefore, there is no need to set
+the paths to the libraries in the Makefile, which has been simplified accordingly. To perform
+the actual build, follow these steps:
 
-    - Boost libs
-        sudo apt-get install libboost-dev
+ 1) Define an environment variable that points to the root folder of this release
 
-    Then download the code at https://github.com/jbeder/yaml-cpp/archive/master.zip
-    and execute the folloqing commands: 
-
-        unzip yaml-cpp-master.zip
-        mv yaml-cpp-master yaml-cpp
-        cd yaml-cpp
-        mkdir lib
-        cd lib
-        cmake ..
-        make
-        sudo make install
-
-
-On MacOSX, when using macports, just type:
-
-    sudo port install yaml-cpp
-
-Please also set properly the YAML path in the Makefile, as follows:
-YAML    := /opt/local/
-
-SystemC installation
-----------------------------------
-
-- Download SystemC (currently at version 2.3.1) from:
-
-http://www.accellera.org/images/downloads/standards/systemc/systemc-2.3.1.tgz
-
-- Unpack it:
-    tar -xzf systemc-2.3.1.tgz
-
-- Enter the newly created directory and refer to the file INSTALL which details all the steps
-  required for building. Basically they are:
-
-    mkdir objdir
-    cd objdir
-    export CXX=g++
-    ../configure
-    make
-    make install
     cd ..
-    rm -rf objdir
+    export NEST_MCAERSIM_ROOT=$(pwd)
 
-  Once you have installed SystemC correctly, you may then jump to the next step.
+ 2) Go to the bin directory
+ 
+    cd ./bin
+    
+ 3) Type these commands to build McAERsim and the routing table parser (RTparser)
 
+    make depend
+    make
+    make rtparser
 
-Build Noxim
--------------
+ 4) As a first test and to learn more about the parameters accepted by McAERsim type
 
-If SystemC is installed correctly, then you just have to compile Noxim.
+    ./mcaersim -help
 
-1) Extract the source files and go to the "bin" directory.
+    To display additional information on RTparser just type
 
-2) In that directory edit the file Makefile to modify "SYSTEMC" and "YAML" 
-environment variables according to your installation paths. Please, note that the
-values already set in the Makefile should be fine if you are using Ubuntu  
+    ./rtparser
 
-3) Just run "make".
+Installation of NEST
+--------------------
 
-You may ignore warning messages (if any), so if you don't get any error you are
-ready to run Noxim for the first time using the command:
+There are different ways to install NEST. For on overview, please visit
 
-    ./noxim
+  https://nest-simulator.readthedocs.io/en/v3.1/installation/index.html
 
-If everything works fine, it is now safe for you to copy or move this executable
-elsewhere; if you are a maniac of cleaning please note that "make clean" will
-also delete the executable... so move it before cleaning!
+or the respective web page of a newer NEST version. In particular, the procedure outlined
+below extends the steps provided for an installation from source without a virtual Python
+environment detailed at
 
-That's all, folks!
+  https://nest-simulator.readthedocs.io/en/v3.1/installation/linux_install.html
 
+The following steps were tested for version 3.1 of NEST. You may download it from
+
+  https://github.com/nest/nest-simulator/tags
+
+1) Installation of system libraries
+
+In addition to the libraries installed for McAERsim (see above), a number of further system
+libraries is required. You may install them at once with the following command:
+
+  sudo apt install -y libtool cmake libreadline-dev gsl-bin libgsl-dev cython3 python3-all-dev \
+  python3-numpy python3-scipy python3-matplotlib python3-nose ipython3 python3-future \
+  python3-mpi4py libmusic-dev music-bin python3-pip python3-pytest python3-pytest-timeout \
+  python3-pytest-xdist
+
+2) Source file extraction and preparation of directories
+
+First, two directories are created in the home directory (or some other location of your choice),
+that will be used for the installation and the build process, respectively. Also, the sources
+need to be extracted from the tarball - they are assumed to be located in the Downloads directory.
+The following commands need to be issued in a Bash terminal for this purpose:
+
+  cd ~
+  mkdir nest-3.1
+  mkdir nest-3.1-build
+  cd nest-3.1
+  export NEST_INST_DIR=$(pwd)
+  cd ~/Downloads
+  tar -xzvf nest-simulator-3.1.tar.gz
+  cd nest-simulator-3.1
+  export NEST_SRC_DIR=$(pwd)
+  cd ~/nest-3.1-build
+
+3) Configure the options for building NEST
+
+  cmake -DCMAKE_INSTALL_PREFIX:PATH=$NEST_INST_DIR -DCMAKE_BUILD_TYPE:STRING=Debug $NEST_SRC_DIR
+
+4) Compile and install NEST
+
+In order to compile and install NEST, execute the commands below:
+
+  make
+  export PYTHONPATH="${NEST_INST_DIR}/lib/python3.8/site-packages${PYTHONPATH:+:$PYTHONPATH}"
+  make install
+  export PATH="${NEST_INST_DIR}/bin:${PATH}"
+  PYTHONUSERBASE=${NEST_INST_DIR} pip3 install --user junitparser
+  make installcheck
+
+5) Setting environment variables and modifying the configuration script
+
+Whenever you use NEST, you need to set some environment variables. This can be achieved by
+executing a configuration script that is provided in NEST's installation directory. However,
+an additional variable has to be appended to this file in order to use user specific Python
+site-packages. If you followed the procedure above, do the following (else modify the commands
+to apply to the directories you have chosen):
+
+* Edit the file  ~/nest-3.1/bin/nest_vars.sh
+
+* Append the following two lines
+
+  # Set the location of user specific Python site-packages
+  export PYTHONUSERBASE="${HOME}/nest-3.1${PYTHONUSERBASE:+:$PYTHONUSERBASE}"
+
+* Then, source the script
+
+  cd ~/nest-3.1/bin
+  source nest_vars.sh
+
+Generation of the YAML File with NEST's Connectivity Information
+----------------------------------------------------------------
+
+Now that NEST is properly installed, network traffic caused by the cortical microcircuit
+model can be assessed. In order to create the YAML file with connectivity information of
+NEST, copy the Python scripts of the cortical microcircuit model provided with NEST in
+its pynest/examples/Potjans_2014 subfolder to a convenient location, for example the
+nest_inputs subfolder of the root directory of this release. The respective folder already
+contains a single Python script "helpers_aux.py" with functions augmenting the functions
+provided by helpers.py of the cortical microcircuit model. Do the following:
+
+* Change back to the top folder of this release
+
+  cd $NEST_MCAERSIM_ROOT
+
+* Copy the Python scripts to the "nest_inputs" subfolder
+
+  cp ~/Downloads/nest-simulator-3.1/pynest/examples/Potjans_2014/*.py ./nest_inputs
+  cd nest_inputs
+
+* Edit the file "sim_params.py". Add the following key-value pairs to the Python dictionary
+  "sim_dict" - left aligned (by spaces) with the key-value pairs already present:
+
+    # YAML file name used for data export
+    'export_fname': 'NEST_MC_Connections.yaml',
+    # Select if YAML output is created or not
+    'gen_yaml': True
+
+* Edit the file "network.py". Append "import helpers_aux" to the imports at the beginning
+  of this file. Then, append the following lines to the evaluate method - left aligned (by
+  spaces) with the method call "helpers.boxplot(self.data_path, self.net_dict['populations'])"
+  Make sure that the alignment of the lines themselves is preserved.
+
+    if (self.sim_dict['gen_yaml']):
+        print('Exporting to ' + self.sim_dict['export_fname'])
+	helpers_aux.export_connections(self.data_path, self.sim_dict['export_fname'], self.pops)
+
+* Now you are ready to go. By default, NEST will run a simulation on a scaled model with 10%
+  of neurons and 10% of synapses per neuron. The actual simulation extending over 1s of
+  biological real time is preceded by a pre-simulation extending over 0.5s. If you want to
+  change the parameters, look at the Python dictionaries in "network_params.py", "sim_params.py"
+  and "stimulus_params.py". The simulation can be executed in the "nest_inputs" subfolder. Just
+  type
+
+    python3 run_microcircuit.py
+
+  Simulation results will be stored in the "data" subfolder of the "nest_inputs" subfolder in this
+  case, unless you change the value associated with the 'data_path' key in the Python dictionary
+  "sim_dict". The YAML file containing connectivity information of NEST will be among them.
+
+* To facilitate a co-simulation between NEST and McAERsim, connectivity information exported by
+  NEST finally need to be converted into routing tables for McAERsim. This can be achieved with
+  the routing table parser 'rtparser' by issuing the following commands:
+
+    cd ${NEST_MCAERSIM_ROOT}/bin
+    ./rtparser ../nest_inputs/data/population_nodeids.dat ../nest_inputs/data/NEST_MC_Connections.yaml
+
+  By default, this creates the routing table for the mesh topology. In order to create the routing
+  table for the torus topology as well, edit the file parser_config.yaml, change the topology from
+  TOPOLOGY_MESH to TOPOLOGY_TORUS and change the output file name from NEST_MC_Global_RT_Mesh.yaml
+  to NEST_MC_Global_RT_Torus.yaml. Then, execute the last command again.
+  
+Installation of Gnuplot
+-----------------------
+
+For graphical evaluation of the results created by the Bash scripts as described in the next
+section, Gnuplot is required. It can be installed as system package by issuing
+
+  sudo apt install gnuplot
+
+Network Simulation Based on Traffic Generated by NEST
+-----------------------------------------------------
+
+For each of the two topologies, mesh and torus, there is a shell script in the scripts subfolder of
+the root folder of this release that can be used to run a simulation and replicate the results
+reported in the publication for the largely scaled version of the cortical microcircuit (number of
+neurons and number of synapses per neuron scaled to 10 percent using the default settings). These
+scripts step through different acceleration factors by reducing the global variable
+nest_time_multiplier, which has been introduced to enable the co-simulations. Results on aggregate
+statistics are parsed by the command line tool sed to extract the maximum latency for each
+acceleration factor and compose a new file that is subsequently used to plot "maximum latency
+vs. acceleration factor" curves by Gnuplot. These plots are comparable to "latency vs. injection
+load" curves that are conventinally used to assess network performance. In addition, boxplots of
+latencies as well as heatmaps of routed events are generated by Gnuplot for each acceleration factor
+based on output files exported from the simulations. The images produced are located in the
+bin/results/data_TOPOLOGY_MC/Images subfolders of the root folder of this release, where TOPOLOGY
+has to be replaced by the appropriate topology name. Note that permission to execute the scripts
+needs to be granted once before execution. For example, in order to make the scripts executable
+and run such a simulation for the mesh toplogy, type:
+
+  # Make files executable
+  cd $NEST_MCAERSIM_ROOT/scripts/aux_scripts
+  chmod u+x *.sh
+  cd ..
+  chmod u+x *.sh
+  # Run the scripts
+  cd $NEST_MCAERSIM_ROOT/scripts
+  ./sweep_acc_factor_mesh_MC.sh
+
+The created images are located at
+
+  $NEST_MCAERSIM_ROOT/bin/results/data_mesh_MC/Images
+  

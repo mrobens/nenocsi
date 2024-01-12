@@ -1,0 +1,156 @@
+#####################################################################################
+# Noxim - the NoC Simulator
+#
+# (C) 2005-2018 by the University of Catania
+# For the complete list of authors refer to file ../doc/AUTHORS.txt
+# For the license applied to these sources refer to file ../doc/LICENSE.txt
+#
+#************************************************************************************
+# Downloaded March 23, 2022 from
+# https://github.com/davidepatti/noxim/tree/c52ebce2217e57bcd4ff11a97b400323bd00acd5
+#************************************************************************************
+#
+# McAERsim - NoC simulator with tree-based multicast support for AER packets
+# Modifications Copyright (C) 2022-2023 Forschungszentrum Juelich GmbH, ZEA-2
+# Author: Markus Robens <https://www.fz-juelich.de/profile/robens_m>
+# For the license applied to these modifications and McAERsim as a whole
+# refer to file ../doc/LICENSE_MCAERSIM.txt
+#  
+# 2022-10-20: There have been several adaptations to account for the different
+#             set of parameters used by McAERsim as compared to the released
+#             version of Noxim.
+#
+#####################################################################################
+#
+# This is the main configuration file used by McAERsim in order to set up
+# global variables for the simulation.
+#
+# In particular, this configuration is used to steer a NoC simulation by input
+# from the NEST Microcircuit model (scaled down to 10%) with 256 neurons per
+# node resulting in a 6x6 mesh
+#
+# Each parameter is overridden when a corresponding command line value is set
+#
+# NOC configuration
+#
+# TOPOLOGY PARAMETERS
+# -------------------
+# Topologies:
+#  TOPOLOGY_MESH
+#  TOPOLOGY_TORUS
+# 
+# Note: You also need to update the global routing table 
+topology: TOPOLOGY_MESH
+#
+# X and Y mesh sizes
+mesh_dim_x: 6
+mesh_dim_y: 6
+#
+# X and Y dimensions of a local processor array
+proc_arr_dim_x: 1
+proc_arr_dim_y: 1
+#
+# Number of neurons simulated in one node
+neurons_per_node: 256
+#
+# BUFFER SETUP
+# ------------
+# evt_width - width of buffer entries (bit)
+# Note: File power.yaml comes only with a limited set of pre-defined buffer width values.
+#       Pre-defined values are 16, 32, 64, 128
+#       If different values are required, they can be added to the lists in power.yaml
+#       along with respective energy/power values that need to be determined from HDL
+#       simulations or measurements.
+evt_width: 32
+#
+# buffer_depth - max. number of AER events in each router buffer
+# Note: File power.yaml comes only with a limited set of pre-defined values for the buffer
+#       depth. Pre-defined values are 2, 4, 8, 16
+#       If different values are required, they can be added to the lists in power.yaml
+#       along with respective energy/power values that need to be determined from HDL
+#       simulations or measurements.
+buffer_depth: 8
+#
+# Max. number of stalled cycles before deadlock is raised
+deadlock_threshold: 50000
+#
+# POWER RELATED SETUP
+# ------------------
+# r2r_link_length - connection length between routers in millimeters
+# Predefined values with yet to be determined power/energy values in power.yaml are
+#   0.5, 1.0, 1.5, 2.0, 2.5, 3.0
+# If different values are required, they can be added to the lists in power.yaml along
+# with respective energy/power values that need to be determined from HDL simulations or
+# measurements.
+r2r_link_length: 0.5
+#
+# SIMULATION SETUP
+# ----------------
+# Duration of a clock period in picoseconds
+clock_period_ps: 1000
+#
+# Duration of reset signal assertion, expressed in cycles
+reset_time: 1000
+#
+# Collect stats after a given number of cycles
+stats_warm_up_time: 0
+#
+# Overall simulation length, expressed in cycles
+simulation_time: 1400000000
+#
+# Seed value used to initialize the random number generator
+rnd_generator_seed: 1
+#
+# Filename of the routing table used to initialize the routers
+routing_table_filename: ../nest_inputs/data/NEST_MC_Global_RT_Mesh.yaml
+#
+# NEST RELATED FILE PARAMETERS
+# ----------------------------
+# Multiplier used to convert NEST time stamps into McAERsim's time stamps
+nest_time_multiplier: 1e9
+#
+# Time over which NEST was run prior to simulation, expressed in milliseconds
+nest_t_presim: 500.0
+#
+# Lines that need to be skipped in NEST's spike recorder output files
+nest_spk_det_skip_lines: 3
+#
+# Method used to assemble the global neuron assignment table
+# Valid values are
+#   gnat_seq
+#   gnat_file
+gnat_method: gnat_seq
+#
+# Filename used to load the global neuron assignment table
+# In case of sequential neuron assignment, i.e. gnat_method = gnat_seq, these are two file
+# names connected by the '$' sign: the name of a file containing the population limits and
+# another file name pointing to the first spike recorder output
+# In case of gnat_method = gnat_file, it is a single YAML file with two nested dictionaries.
+# Keys at the first level specify the processing elements, keys at the second level specify the
+# spike recorder file names and the values of the second level are lists with two entries - the
+# minimum and maximum neuron IDs.
+gnat_string: ../nest_inputs/data/population_nodeids.dat$../nest_inputs/data/spike_recorder-7718-0.dat
+#
+# REPORTING
+# ---------
+# Create detailed output statistics: Provide statistics for each (source, destination) pair,
+# show the matrix of maximum delays that were required to reach the given target node, show
+# the matrix of routed events per router, show dynamic power breakdown, show static power
+# breakdown
+detailed: false
+#
+# Level of verbosity for command line output
+# Valid values are
+#   VERBOSE_LOW
+#   VERBOSE_HIGH
+verbose_mode: VERBOSE_LOW
+#
+# Do you want to create output files? They will be placed in the data sub-folder
+create_output_files: true
+#
+# If you want to create output files, you need to specify a file suffix that will be added
+# to the generated base filenames and will be followed by a .csv file designator
+output_file_suffix: "_mesh_6x6_256_npn_MC"
+#
+# Do you want to show detailed buffer statistics?
+show_buffer_stats: false

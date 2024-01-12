@@ -7,82 +7,70 @@
  *
  * This file contains the declaration of the buffer
  */
+/*\\\********************************************************************************
+ * Downloaded March 23, 2022 from
+ * https://github.com/davidepatti/noxim/tree/c52ebce2217e57bcd4ff11a97b400323bd00acd5
+ ************************************************************************************
+ *
+ * McAERsim - NoC simulator with tree-based multicast support for AER packets
+ * Modifications Copyright (C) 2022-2023 Forschungszentrum Juelich GmbH, ZEA-2
+ * Author: Markus Robens <https://www.fz-juelich.de/profile/robens_m>
+ * For the license applied to these modifications and McAERsim as a whole
+ * refer to file ../doc/LICENSE_MCAERSIM.txt
+ * 
+ * 2022-09-01: Class declaration has been re-organized
+ *             Adaptations to account for a different data type
+ *             (AER_EVT instead of Flit)
+ *             A type definition and function declarations that are not required
+ *             in McAERsim have been removed. 
+ *
+ *///******************************************************************************** 
 
-#ifndef __NOXIMBUFFER_H__
-#define __NOXIMBUFFER_H__
+#ifndef __MCAERSIMBUFFER_H__
+#define __MCAERSIMBUFFER_H__
 
 #include <cassert>
 #include <queue>
+#include <iomanip>
+#include <systemc.h>
 #include "DataStructs.h"
-using namespace std;
+#include "GlobalParams.h"
 
 class Buffer {
-
-  public:
-
-    Buffer();
-
-    virtual ~ Buffer() {
-    } void SetMaxBufferSize(const unsigned int bms);	// Set buffer max size (in flits)
-
-    unsigned int GetMaxBufferSize() const;	// Get max buffer size
-
-    unsigned int getCurrentFreeSlots() const;	// free buffer slots
-
-    bool IsFull() const;	// Returns true if buffer is full
-
-    bool IsEmpty() const;	// Returns true if buffer is empty
-
-    virtual void Drop(const Flit & flit) const;	// Called by Push() when buffer is full
-
-    virtual void Empty() const;	// Called by Pop() when buffer is empty
-
-    void Push(const Flit & flit);	// Push a flit. Calls Drop method if buffer is full
-
-    Flit Pop();		// Pop a flit
-
-    Flit Front() const;	// Return a copy of the first flit in the buffer
-
-    unsigned int Size() const;
-
-    void ShowStats(std::ostream & out);
-
-    void Disable();
-
-
-    void Print();
-    
-    bool deadlockFree();
-    void deadlockCheck();
-
-
-    void setLabel(string);
-    string getLabel() const;
-
-  private:
-
-    bool true_buffer;
-    bool deadlock_detected;
-
-    int full_cycles_counter;
-    int last_front_flit_seq;
-
-    string label;
-
-    unsigned int max_buffer_size;
-
-    queue < Flit > buffer;
-
-    unsigned int max_occupancy;
-    double hold_time, last_event, hold_time_sum;
-    double mean_occupancy;
-    int    previous_occupancy;
-    
-    void SaveOccupancyAndTime();
-    void UpdateMeanOccupancy();
+  std::string label;
+  unsigned int max_buffer_size;
+  bool true_buffer;
+  std::queue <AER_EVT> buffer;
+  // Variables required for deadlock checking
+  int full_cycles_counter;
+  AER_EVT last_AER_EVT;
+  bool deadlock_detected;
+  // Variables and methods required for statistical evaluation
+  unsigned int max_occupancy;
+  double hold_time, last_event, hold_time_sum;
+  double mean_occupancy;
+  int previous_occupancy;
+  void SaveOccupancyAndTime();
+  void UpdateMeanOccupancy();
+ public:
+  Buffer();                                         // Constructor
+  virtual ~Buffer(){}                               // Destructor
+  void setLabel(std::string);                       // Sets the buffer label
+  std::string getLabel() const;                     // Returns the buffer label
+  void SetMaxBufferSize(const unsigned int bms);    // Set maximum buffer size (in AER events)
+  unsigned int GetMaxBufferSize() const;            // Get maximum buffer size (in AER events)
+  unsigned int getCurrentFreeSlots() const;         // Free slots in the buffer
+  bool IsFull() const;                              // Returns true if buffer is full
+  bool IsEmpty() const;                             // Returns true if buffer is empty
+  void Push(const AER_EVT& evt);                    // Push an AER event
+  AER_EVT Pop();                                    // Pops an AER event
+  AER_EVT Front() const;                            // Return a copy of the first AER event in the buffer
+  unsigned int Size() const;                        // Returns the buffer size
+  void ShowStats(std::ostream& out);                // Show statistical parameters
+  void Disable();                                   // Sets true_buffer to false
+  void Print();                                     // Displays the current buffer content
+  bool deadlockFree();                              // True if AER event at the front is not in deadlock
+  void deadlockCheck();                             // Checks if AER event at the front is in dealock
 };
 
-typedef Buffer BufferBank[MAX_VIRTUAL_CHANNELS];
-
-
-#endif
+#endif /* __MCAERSIMBUFFER_H__ */

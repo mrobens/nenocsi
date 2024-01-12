@@ -7,226 +7,217 @@
  *
  * This file contains the implementation of the statistics
  */
+/*\\\********************************************************************************
+ * Downloaded March 23, 2022 from
+ * https://github.com/davidepatti/noxim/tree/c52ebce2217e57bcd4ff11a97b400323bd00acd5
+ ************************************************************************************
+ *
+ * McAERsim - NoC simulator with tree-based multicast support for AER packets
+ * Modifications Copyright (C) 2022-2023 Forschungszentrum Juelich GmbH, ZEA-2
+ * Author: Markus Robens <https://www.fz-juelich.de/profile/robens_m>
+ * For the license applied to these modifications and McAERsim as a whole
+ * refer to file ../doc/LICENSE_MCAERSIM.txt
+ * 
+ * 2022-10-06: Most methods receive an additional parameter that is required to
+ *             account for the multiple processing elements per tile support. Also,
+ *             the different data type used for transmissions is reflected by some
+ *             naming alterations as well as a different parameter passed to a
+ *             function. The configure(..., ...) method needs to initialize the two 
+ *             additional attributes local_deliveries and the global_proc_ids array. 
+ *             In method receivedEvts(..., ..., ...) a conversion between NEST time 
+ *             stamps and the time resolution is required. Also, the new attribute
+ *             local_deliveries needs to be updated appropriately. Method
+ *             getCommunicationEnergy(..., ...) has not been implemented, since its
+ *             body is commented out in the Noxim version. On the other hand, method
+ *             setDelays(...) has been added and returns an irregular matrix of delay
+ *             values to reach the single processing elements of a tile via call by
+ *             reference. Methods getReceivedPackets() and getReceivedFlits() have
+ *             been replaced by method getReceivedEvts(...).
+ *
+ *///******************************************************************************** 
 
 #include "Stats.h"
 
-// TODO: nan in averageDelay
+// Private methods
+
+int Stats::searchCommHistory(int src_id, int proc_id)
+{
+  assert(proc_id < NO_PES);
+  for (unsigned int i = 0; i < commhist[proc_id].size(); ++i)
+    if (commhist[proc_id][i].src_id == src_id)
+      return i;
+
+  return -1;
+}
+
+// Public methods
 
 void Stats::configure(const int node_id, const double _warm_up_time)
 {
-    id = node_id;
-    warm_up_time = _warm_up_time;
+  id = node_id;
+  for (int k = 0; k < NO_PES; ++k)
+    global_proc_ids[k] = id * NO_PES + k;
+  warm_up_time = _warm_up_time;
+  local_deliveries = 0;
 }
 
-void Stats::receivedFlit(const double arrival_time,
-			      const Flit & flit)
+void Stats::receivedEvt(const double arrival_time, const int proc_id, const AER_EVT& evt)
 {
-    if (arrival_time - GlobalParams::reset_time < warm_up_time)
-	return;
+  if (arrival_time - GlobalParams::reset_time < warm_up_time)
+    return;
 
-    int i = searchCommHistory(flit.src_id);
+  int i = searchCommHistory(evt.src_id, proc_id);
+  // First AER_EVT received from a given source
+  // Initialize CommHist structure
+  if (i == -1)
+  {
+    CommHistory ch;
+    ch.src_id = evt.src_id;
+    ch.total_received_evts = 0;
+    commhist[proc_id].push_back(ch);
+    i = commhist[proc_id].size() - 1;
+  }
+  // Note: In the following calculation, both the arrival_time and the second expression include reset_time as offset, so that it cancels out
+  int delay = (int)arrival_time - (int)((evt.timestamp * GlobalParams::nest_time_multiplier) / (double)GlobalParams::clock_period_ps + GlobalParams::reset_time);
+  commhist[proc_id][i].delays.push_back(delay);
+  commhist[proc_id][i].total_received_evts++;
+  commhist[proc_id][i].last_received_evt_time = arrival_time - GlobalParams::reset_time - warm_up_time;
+  // Update local deliveries
+  if (evt.src_id == global_proc_ids[proc_id])
+    local_deliveries++;
+}
 
-    if (i == -1) {
-	// first flit received from a given source
-	// initialize CommHist structure
-	CommHistory ch;
+double Stats::getAverageDelay(const int src_id, const int proc_id)
+{
+  double sum = 0.0;
+  int i = searchCommHistory(src_id, proc_id);
+  assert(i >= 0);
+  for (unsigned int j = 0; j < commhist[proc_id][i].delays.size(); ++j)
+    sum += commhist[proc_id][i].delays[j];
 
-	ch.src_id = flit.src_id;
-	ch.total_received_flits = 0;
-	chist.push_back(ch);
+  return sum / (double) commhist[proc_id][i].delays.size();
+}
+  
+double Stats::getAverageDelay(const int proc_id)
+{
+  double avg = 0.0;
+  for (unsigned int k = 0; k < commhist[proc_id].size(); ++k)
+  {
+    unsigned int samples = commhist[proc_id][k].delays.size();
+    if (samples)
+      avg += (double) samples * getAverageDelay(commhist[proc_id][k].src_id, proc_id);
+  }
+  return avg / (double) getReceivedEvts(proc_id);
+}
 
-	i = chist.size() - 1;
+double Stats::getMaxDelay(const int src_id, const int proc_id)
+{
+  double maxd = -1.0;
+  int i = searchCommHistory(src_id, proc_id);
+  assert (i >= 0);
+  for (unsigned int j = 0; j < commhist[proc_id][i].delays.size(); ++j)
+    if (commhist[proc_id][i].delays[j] > maxd)
+    {
+      maxd = commhist[proc_id][i].delays[j];
     }
 
-    if (flit.flit_type == FLIT_TYPE_HEAD)
-	chist[i].delays.push_back(arrival_time - flit.timestamp);
-
-    chist[i].total_received_flits++;
-    chist[i].last_received_flit_time = arrival_time - warm_up_time;
+  return maxd;
 }
 
-double Stats::getAverageDelay(const int src_id)
+double Stats::getMaxDelay(const int proc_id)
 {
-    double sum = 0.0;
-
-    int i = searchCommHistory(src_id);
-
-    assert(i >= 0);
-
-    for (unsigned int j = 0; j < chist[i].delays.size(); j++)
-	sum += chist[i].delays[j];
-
-    return sum / (double) chist[i].delays.size();
-}
-
-double Stats::getAverageDelay()
-{
-    double avg = 0.0;
-
-    for (unsigned int k = 0; k < chist.size(); k++) {
-	unsigned int samples = chist[k].delays.size();
-	if (samples)
-	    avg += (double) samples *getAverageDelay(chist[k].src_id);
+  double maxd = -1.0;
+  for (unsigned int k = 0; k < commhist[proc_id].size(); ++k)
+  {
+    unsigned int samples = commhist[proc_id][k].delays.size();
+    if (samples)
+    {
+      double m = getMaxDelay(commhist[proc_id][k].src_id, proc_id);
+      if (m > maxd)
+	maxd = m;
     }
-
-    return avg / (double) getReceivedPackets();
+  }
+  return maxd;
 }
 
-double Stats::getMaxDelay(const int src_id)
+void Stats::setDelays(std::vector<std::vector<double> >& overall_delays) const
 {
-    double maxd = -1.0;
-
-    int i = searchCommHistory(src_id);
-
-    assert(i >= 0);
-
-    for (unsigned int j = 0; j < chist[i].delays.size(); j++)
-	if (chist[i].delays[j] > maxd) {
-	    maxd = chist[i].delays[j];
-	}
-    return maxd;
+  overall_delays.resize(NO_PES);
+  for (unsigned int k = 0; k < NO_PES; ++k)
+    for (unsigned int c = 0; c < commhist[k].size(); ++c)
+      if (commhist[k][c].delays.size() > 0)
+	overall_delays[k].insert(overall_delays[k].end(), commhist[k][c].delays.begin(), commhist[k][c].delays.end());
 }
 
-double Stats::getMaxDelay()
+double Stats::getAverageThroughput(const int src_id, const int proc_id)
 {
-    double maxd = -1.0;
+  int i = searchCommHistory(src_id, proc_id);
+  assert (i >= 0);
+  int current_sim_cycles = sc_time_stamp().to_double() / GlobalParams::clock_period_ps - warm_up_time - GlobalParams::reset_time;
+  if (commhist[proc_id][i].total_received_evts == 0)
+    return -1.0;
+  else
+    return (double) commhist[proc_id][i].total_received_evts / current_sim_cycles;
+}
 
-    for (unsigned int k = 0; k < chist.size(); k++) {
-	unsigned int samples = chist[k].delays.size();
-	if (samples) {
-	    double m = getMaxDelay(chist[k].src_id);
-	    if (m > maxd)
-		maxd = m;
-	}
+double Stats::getAverageThroughput(const int proc_id)
+{
+  double sum = 0.0;
+  for (unsigned int k = 0; k < commhist[proc_id].size(); ++k)
+  {
+    double avg = getAverageThroughput(commhist[proc_id][k].src_id, proc_id);
+    if (avg > 0.0)
+      sum += avg;
+  }
+  return sum;
+}
+
+unsigned int Stats::getReceivedEvts(const int proc_id)
+{
+  int n = 0;
+  for (unsigned int i = 0; i < commhist[proc_id].size(); ++i)
+    n += commhist[proc_id][i].total_received_evts;
+
+  return n;
+}
+
+unsigned int Stats::getTotalCommunications(const int proc_id)
+{
+  return commhist[proc_id].size();
+}
+
+void Stats::showStats(std::ostream& out, bool header)
+{
+  if (header)
+  {
+    out << "%"
+        << std::setw(5) << "src"
+        << std::setw(5) << "dst"
+        << std::setw(10) << "delay avg"
+        << std::setw(10) << "delay max"
+        << std::setw(15) << "throughput"
+        << std::setw(12) << "received" << std::endl;
+    out << "%"
+        << std::setw(5) << ""
+        << std::setw(5) << ""
+        << std::setw(10) << "cycles"
+        << std::setw(10) << "cycles"
+        << std::setw(15) << "evt/cycle"
+        << std::setw(12) << "evts" << std::endl;
+  }
+  for (unsigned int k = 0; k < NO_PES; ++k)
+  {
+    for (unsigned int i = 0; i < commhist[k].size(); ++i)
+    {
+      out << " "
+          << std::setw(5) << commhist[k][i].src_id
+          << std::setw(5) << global_proc_ids[k]
+          << std::setw(10) << getAverageDelay(commhist[k][i].src_id, k)
+	  << std::setw(10) << getMaxDelay(commhist[k][i].src_id, k)
+	  << std::setw(15) << getAverageThroughput(commhist[k][i].src_id, k)
+	  << std::setw(12) << commhist[k][i].total_received_evts << std::endl;
     }
-
-    return maxd;
-}
-
-double Stats::getAverageThroughput(const int src_id)
-{
-    int i = searchCommHistory(src_id);
-
-    assert(i >= 0);
-
-    // not using GlobalParams::simulation_time since 
-    // the value must takes into account the invokation time
-    // (when called before simulation ended, e.g. turi signal)
-    int current_sim_cycles = sc_time_stamp().to_double()/GlobalParams::clock_period_ps - warm_up_time - GlobalParams::reset_time;
-
-    if (chist[i].total_received_flits == 0)
-	return -1.0;
-    else
-	return (double) chist[i].total_received_flits / current_sim_cycles;
-	    //(double) chist[i].last_received_flit_time;
-}
-
-double Stats::getAverageThroughput()
-{
-    double sum = 0.0;
-
-    for (unsigned int k = 0; k < chist.size(); k++) {
-	double avg = getAverageThroughput(chist[k].src_id);
-	if (avg > 0.0)
-	    sum += avg;
-    }
-
-    return sum;
-}
-
-unsigned int Stats::getReceivedPackets()
-{
-    int n = 0;
-
-    for (unsigned int i = 0; i < chist.size(); i++)
-	n += chist[i].delays.size();
-
-    return n;
-}
-
-unsigned int Stats::getReceivedFlits()
-{
-    int n = 0;
-
-    for (unsigned int i = 0; i < chist.size(); i++)
-	n += chist[i].total_received_flits;
-
-    return n;
-}
-
-unsigned int Stats::getTotalCommunications()
-{
-    return chist.size();
-}
-
-double Stats::getCommunicationEnergy(int src_id, int dst_id)
-{
-  // NOT YET IMPLEMENTED
-    // Assumptions: minimal path routing, constant packet size
-  /*
-    Coord src_coord = id2Coord(src_id);
-    Coord dst_coord = id2Coord(dst_id);
-
-    int hops =
-	abs(src_coord.x - dst_coord.x) + abs(src_coord.y - dst_coord.y);
-
-    double energy =
-	hops * (power.getPwrArbitration() + power.getPwrCrossbar() +
-		 power.getPwrBuffering() *
-		(GlobalParams::min_packet_size +
-		 GlobalParams::max_packet_size) / 2 +
-		power.getPwrRouting() + power.getPwrSelection()
-	);
-
-    return energy;
-  */
-  return -1.0;
-}
-
-int Stats::searchCommHistory(int src_id)
-{
-    for (unsigned int i = 0; i < chist.size(); i++)
-	if (chist[i].src_id == src_id)
-	    return i;
-
-    return -1;
-}
-
-void Stats::showStats(int curr_node, std::ostream & out, bool header)
-{
-    if (header) {
-	out << "%"
-	    << setw(5) << "src"
-	    << setw(5) << "dst"
-	    << setw(10) << "delay avg"
-	    << setw(10) << "delay max"
-	    << setw(15) << "throughput"
-	    << setw(13) << "energy"
-	    << setw(12) << "received" << setw(12) << "received" << endl;
-	out << "%"
-	    << setw(5) << ""
-	    << setw(5) << ""
-	    << setw(10) << "cycles"
-	    << setw(10) << "cycles"
-	    << setw(15) << "flits/cycle"
-	    << setw(13) << "Joule"
-	    << setw(12) << "packets" << setw(12) << "flits" << endl;
-    }
-    for (unsigned int i = 0; i < chist.size(); i++) {
-	out << " "
-	    << setw(5) << chist[i].src_id
-	    << setw(5) << curr_node
-	    << setw(10) << getAverageDelay(chist[i].src_id)
-	    << setw(10) << getMaxDelay(chist[i].src_id)
-	    << setw(15) << getAverageThroughput(chist[i].src_id)
-	    << setw(13) << getCommunicationEnergy(chist[i].src_id,
-						  curr_node)
-	    << setw(12) << chist[i].delays.size()
-	    << setw(12) << chist[i].total_received_flits << endl;
-    }
-
-    out << "% Aggregated average delay (cycles): " << getAverageDelay() <<
-	endl;
-    out << "% Aggregated average throughput (flits/cycle): " <<
-	getAverageThroughput() << endl;
+    out << "% Aggregated average delay (cycles): " << getAverageDelay(k) << std::endl;
+    out << "% Aggregated average throughput (evts/cycle): " << getAverageThroughput(k) << std::endl;
+  }
 }

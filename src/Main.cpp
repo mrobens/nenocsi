@@ -7,140 +7,105 @@
  *
  * This file contains the implementation of the top-level of Noxim
  */
+/*\\\********************************************************************************
+ * Downloaded March 23, 2022 from
+ * https://github.com/davidepatti/noxim/tree/c52ebce2217e57bcd4ff11a97b400323bd00acd5
+ * Updated December 13, 2023 according to
+ * https://github.com/davidepatti/noxim/tree/afb4aa0c7e81aa37f023b46a9bbc2856a4ae6b2f
+ ************************************************************************************
+ *
+ * McAERsim - NoC simulator with tree-based multicast support for AER packets
+ * Modifications Copyright (C) 2022-2023 Forschungszentrum Juelich GmbH, ZEA-2
+ * Author: Markus Robens <https://www.fz-juelich.de/profile/robens_m>
+ * For the license applied to these modifications and McAERsim as a whole
+ * refer to file ../doc/LICENSE_MCAERSIM.txt
+ *
+ * 2022-09-09: In McAERsim, there is no trace file support and no possibility to
+ *             stop a simulation based on drained volume.
+ *             The command line output has been appended to reveal that it is
+ *             a modified program version. In addition, some small edits have
+ *             been performed.
+ *
+ *///******************************************************************************** 
 
 #include "ConfigurationManager.h"
 #include "NoC.h"
-#include "GlobalStats.h"
 #include "DataStructs.h"
 #include "GlobalParams.h"
+#include "GlobalStats.h"
 
 #include <csignal>
 
-using namespace std;
+NoC* n;
 
-// need to be globally visible to allow "-volume" simulation stop
-unsigned int drained_volume;
-NoC *n;
-
-void signalHandler( int signum )
+void signalHandler(int signum)
 {
-    cout << "\b\b  " << endl;
-    cout << endl;
-    cout << "Current Statistics:" << endl;
-    cout << "(" << sc_time_stamp().to_double() / GlobalParams::clock_period_ps << " sim cycles executed)" << endl;
-    GlobalStats gs(n);
-    gs.showStats(std::cout, GlobalParams::detailed);
+  int now = sc_time_stamp().to_double() / GlobalParams::clock_period_ps;
+  std::cout << "\b\b  " << std::endl;
+  std::cout << std::endl;
+  std::cout << "Current Statistics:" << std::endl;
+  std::cout << "(" << now << " sim cycles executed)" << std::endl;
+  GlobalStats gs(n);
+  gs.showStats(std::cout, GlobalParams::detailed);
 }
 
-int sc_main(int arg_num, char *arg_vet[])
+int sc_main(int argc, char* argv[])
 {
-    signal(SIGQUIT, signalHandler);  
+  signal(SIGQUIT, signalHandler);
 
-    // TEMP
-    drained_volume = 0;
+  std::cout << "\t---------------------------------------------------------" << endl;
+  std::cout << "\t\tNoxim - the NoC Simulator" << endl;
+  std::cout << "\t\t(C) University of Catania" << endl;
+  std::cout << "\t---------------------------------------------------------" << endl;
 
-    // Handle command-line arguments
-    cout << "\t--------------------------------------------" << endl; 
-    cout << "\t\tNoxim - the NoC Simulator" << endl;
-    cout << "\t\t(C) University of Catania" << endl;
-    cout << "\t--------------------------------------------" << endl; 
+  std::cout << "    Catania V., Mineo A., Monteleone S., Palesi M., and Patti D." << endl;
+  std::cout << "    (2016) Cycle-Accurate Network on Chip Simulation with Noxim." << endl;
+  std::cout << "    ACM Trans. Model. Comput. Simul. 27, 1, Article 4 (August 2016)," << endl;
+  std::cout << "    25 pages. DOI: https://doi.org/10.1145/2953878" << endl;
+  std::cout << endl;
+  std::cout << " -----------------------------------------------------------------------" << std::endl;
+  std::cout << " McAERsim - NoC simulator with multicast support for AER packets" << std::endl;
+  std::cout << " Modifications Copyright 2022-2023 Forschungszentrum Juelich GmbH, ZEA-2" << std::endl;
+  std::cout << std::endl;
+  std::cout << " This program is provided AS IS and comes with ABSOLUTELY NO WARRANTY." << std::endl;
+  std::cout << " It is free software, and you are welcome to redistribute it under" << std::endl;
+  std::cout << " certain conditions. See the LICENSE_MCAERSIM.txt file for details." << std::endl;
+  std::cout << " -----------------------------------------------------------------------" << std::endl;
 
-    cout << "Catania V., Mineo A., Monteleone S., Palesi M., and Patti D. (2016) Cycle-Accurate Network on Chip Simulation with Noxim. ACM Trans. Model. Comput. Simul. 27, 1, Article 4 (August 2016), 25 pages. DOI: https://doi.org/10.1145/2953878" << endl;
-    cout << endl;
-    cout << endl;
+  configure(argc, argv);
 
-    configure(arg_num, arg_vet);
+  // Signals
+  sc_clock clock("clock", GlobalParams::clock_period_ps, SC_PS);
+  sc_signal<bool> reset;
 
+  // NoC instance
+  n = new NoC("NoC");
+  n->clock(clock);
+  n->reset(reset);
 
-    // Signals
-    sc_clock clock("clock", GlobalParams::clock_period_ps, SC_PS);
-    sc_signal <bool> reset;
+  // Reset the chip and run the simulation
+  reset.write(1);
+  std::cout << "Reset for " << (int)(GlobalParams::reset_time) << " cycles ... ";
+  srand(GlobalParams::rnd_generator_seed);
+  
+  // fix clock periods different from 1ns
+  //sc_start(GlobalParams::reset_time, SC_NS);
+  sc_start(GlobalParams::reset_time * GlobalParams::clock_period_ps, SC_PS);
 
-    // NoC instance
-    n = new NoC("NoC");
+  reset.write(0);
+  std::cout << " done! " << std::endl;
+  std::cout << "Now running for " << GlobalParams::simulation_time << " cycles..." << std::endl;
+  // fix clock periods different from 1ns
+  //sc_start(GlobalParams::simulation_time, SC_NS);
+  sc_start(GlobalParams::simulation_time * GlobalParams::clock_period_ps, SC_PS);
 
-    n->clock(clock);
-    n->reset(reset);
-
-    // Trace signals
-    sc_trace_file *tf = NULL;
-    if (GlobalParams::trace_mode) {
-	tf = sc_create_vcd_trace_file(GlobalParams::trace_filename.c_str());
-	sc_trace(tf, reset, "reset");
-	sc_trace(tf, clock, "clock");
-
-	for (int i = 0; i < GlobalParams::mesh_dim_x; i++) {
-	    for (int j = 0; j < GlobalParams::mesh_dim_y; j++) {
-		char label[64];
-
-		sprintf(label, "req(%02d)(%02d).east", i, j);
-		sc_trace(tf, n->req[i][j].east, label);
-		sprintf(label, "req(%02d)(%02d).west", i, j);
-		sc_trace(tf, n->req[i][j].west, label);
-		sprintf(label, "req(%02d)(%02d).south", i, j);
-		sc_trace(tf, n->req[i][j].south, label);
-		sprintf(label, "req(%02d)(%02d).north", i, j);
-		sc_trace(tf, n->req[i][j].north, label);
-
-		sprintf(label, "ack(%02d)(%02d).east", i, j);
-		sc_trace(tf, n->ack[i][j].east, label);
-		sprintf(label, "ack(%02d)(%02d).west", i, j);
-		sc_trace(tf, n->ack[i][j].west, label);
-		sprintf(label, "ack(%02d)(%02d).south", i, j);
-		sc_trace(tf, n->ack[i][j].south, label);
-		sprintf(label, "ack(%02d)(%02d).north", i, j);
-		sc_trace(tf, n->ack[i][j].north, label);
-	    }
-	}
-    }
-    // Reset the chip and run the simulation
-    reset.write(1);
-    cout << "Reset for " << (int)(GlobalParams::reset_time) << " cycles... ";
-    srand(GlobalParams::rnd_generator_seed);
-
-    // fix clock periods different from 1ns
-    //sc_start(GlobalParams::reset_time, SC_NS);
-    sc_start(GlobalParams::reset_time * GlobalParams::clock_period_ps, SC_PS);
-
-    reset.write(0);
-    cout << " done! " << endl;
-    cout << " Now running for " << GlobalParams:: simulation_time << " cycles..." << endl;
-    // fix clock periods different from 1ns
-    //sc_start(GlobalParams::simulation_time, SC_NS);
-    sc_start(GlobalParams::simulation_time * GlobalParams::clock_period_ps, SC_PS);
-
-
-    // Close the simulation
-    if (GlobalParams::trace_mode) sc_close_vcd_trace_file(tf);
-    cout << "Noxim simulation completed.";
-    cout << " (" << sc_time_stamp().to_double() / GlobalParams::clock_period_ps << " cycles executed)" << endl;
-    cout << endl;
-//assert(false);
-    // Show statistics
-    GlobalStats gs(n);
-    gs.showStats(std::cout, GlobalParams::detailed);
-
-
-    if ((GlobalParams::max_volume_to_be_drained > 0) &&
-	(sc_time_stamp().to_double() / GlobalParams::clock_period_ps - GlobalParams::reset_time >=
-	 GlobalParams::simulation_time)) {
-	cout << endl
-         << "WARNING! the number of flits specified with -volume option" << endl
-	     << "has not been reached. ( " << drained_volume << " instead of " << GlobalParams::max_volume_to_be_drained << " )" << endl
-         << "You might want to try an higher value of simulation cycles" << endl
-	     << "using -sim option." << endl;
-
-#ifdef TESTING
-	cout << endl
-         << " Sum of local drained flits: " << gs.drained_total << endl
-	     << endl
-         << " Effective drained volume: " << drained_volume;
-#endif
-
-    }
-
-#ifdef DEADLOCK_AVOIDANCE
-	cout << "***** WARNING: DEADLOCK_AVOIDANCE ENABLED!" << endl;
-#endif
-    return 0;
+  std::cout << "McAERsim simulation completed.";
+  std::cout << " (" << sc_time_stamp().to_double() / GlobalParams::clock_period_ps;
+  std::cout << " cycles executed)" << std::endl;
+  std::cout << "Simulation covers " << sc_time_stamp().to_seconds() << "s" << std::endl;
+  std::cout << endl;
+  // Show statistics
+  GlobalStats gs(n);
+  gs.showStats(std::cout, GlobalParams::detailed);
+  return 0;
 }

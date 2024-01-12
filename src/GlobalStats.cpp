@@ -7,693 +7,434 @@
  *
  * This file contains the implementaton of the global statistics
  */
+/*\\\********************************************************************************
+ * Downloaded March 23, 2022 from
+ * https://github.com/davidepatti/noxim/tree/c52ebce2217e57bcd4ff11a97b400323bd00acd5
+ ************************************************************************************
+ *
+ * McAERsim - NoC simulator with tree-based multicast support for AER packets
+ * Modifications Copyright (C) 2022-2023 Forschungszentrum Juelich GmbH, ZEA-2
+ * Author: Markus Robens <https://www.fz-juelich.de/profile/robens_m>
+ * For the license applied to these modifications and McAERsim as a whole
+ * refer to file ../doc/LICENSE_MCAERSIM.txt
+ * 
+ * 2022-10-06: Neither delta topologies nor wireless transmissions are supported
+ *             by McAERsim. Related methods or method portions therefore have
+ *             not been implemented. On the other hand, support for multiple
+ *             processing elements per tile has been included. Methods 
+ *             getReceivedPackets() and getReceivedFlits() have been replaced
+ *             by method getReceivedEvts(). The ratio beetween the number of 
+ *             ideal and the number of actually received events is hard to 
+ *             determine in the multicast case and has thus been omitted. However, 
+ *             a method returning the number of local deliveries is additionally 
+ *             provided, which can be used to compare the number of received events 
+ *             against the number of received flits in the source-address driven 
+ *             local multicast case of NENoCSi to make sure, that all events 
+ *             got delivered. Furthermore, methods checkCamFailure(), 
+ *             setOverallDelays(...) and getOverallQueuedEvts() have been added.
+ *             Finally, a means to export the delay vector as well as the matrix
+ *             of routed events has been realized.  
+ *
+ *///******************************************************************************** 
 
 #include "GlobalStats.h"
-using namespace std;
 
-GlobalStats::GlobalStats(const NoC * _noc)
+void GlobalStats::updatePowerBreakdown(std::map<std::string, double>& dst, PowerBreakdown* src)
 {
-    noc = _noc;
+  for (int i = 0; i != src->size; ++i)
+  {
+    dst[src->breakdown[i].label] += src->breakdown[i].value;
+  }
+}
 
-	#ifdef TESTING
-    drained_total = 0;
-	#endif
+GlobalStats::GlobalStats(const NoC* _noc)
+{
+  noc = _noc;
+}
+
+bool GlobalStats::checkCamFailure()
+{
+  bool CAM_lookup_failed = false;
+
+  for (int y = 0; y < GlobalParams::mesh_dim_y; ++y)
+    for (int x = 0; x < GlobalParams::mesh_dim_x; ++x)
+      CAM_lookup_failed |= noc->t[x][y]->r->checkCamFailure();
+
+  return CAM_lookup_failed;
 }
 
 double GlobalStats::getAverageDelay()
 {
-    unsigned int total_packets = 0;
-    double avg_delay = 0.0;
+  unsigned int total_evts = 0;
+  double avg_delay = 0.0;
 
-    if (GlobalParams::topology == TOPOLOGY_MESH)
-    {
-	for (int y = 0; y < GlobalParams::mesh_dim_y; y++)
-	    for (int x = 0; x < GlobalParams::mesh_dim_x; x++) 
-	    {
-		unsigned int received_packets =
-		    noc->t[x][y]->r->stats.getReceivedPackets();
+  for (int y = 0; y < GlobalParams::mesh_dim_y; ++y)
+    for (int x = 0; x < GlobalParams::mesh_dim_x; ++x)
+      for (int k = 0; k < NO_PES; ++k)
+      {
+        unsigned int received_evts = noc->t[x][y]->r->stats.getReceivedEvts(k);
+        if (received_evts)
+        {
+	  avg_delay += received_evts * noc->t[x][y]->r->stats.getAverageDelay(k);
+	  total_evts += received_evts;
+        }
+      }
 
-		if (received_packets) 
-		{
-		    avg_delay +=
-			received_packets *
-			noc->t[x][y]->r->stats.getAverageDelay();
-		    total_packets += received_packets;
-		}
-	    }
-    }
-    else // other delta topologies
-    { 
-	for (int y = 0; y < GlobalParams::n_delta_tiles; y++)
-	{
-	    unsigned int received_packets =
-		noc->core[y]->r->stats.getReceivedPackets();
-
-	    if (received_packets) 
-	    {
-		avg_delay +=
-		    received_packets *
-		    noc->core[y]->r->stats.getAverageDelay();
-		total_packets += received_packets;
-	    }
-	}
-
-    }
-
-
-    avg_delay /= (double) total_packets;
-
-    return avg_delay;
+  avg_delay /= (double) total_evts;
+  return avg_delay;
 }
 
-
-
-double GlobalStats::getAverageDelay(const int src_id,
-					 const int dst_id)
+double GlobalStats::getAverageDelay(const int src_id, const int dst_id)
 {
-    Tile *tile = noc->searchNode(dst_id);
-
-    assert(tile != NULL);
-
-    return tile->r->stats.getAverageDelay(src_id);
+  int dst_tile_id = dst_id / (int) NO_PES;
+  int dst_pe_id = dst_id % (int) NO_PES;
+  Tile *tile = noc->searchNode(dst_tile_id);
+  assert(tile != NULL);
+  return tile->r->stats.getAverageDelay(src_id, dst_pe_id);
 }
 
 double GlobalStats::getMaxDelay()
 {
-    double maxd = -1.0;
+  double maxd = -1.0;
+  for (int y = 0; y < GlobalParams::mesh_dim_y; ++y)
+    for (int x = 0; x < GlobalParams::mesh_dim_x; ++x)
+      for (int k = 0; k < NO_PES; ++k)
+      {
+        Coord coord;
+        coord.x = x;
+        coord.y = y;
+        int tile_id = coord2Id(coord);
+	int g_src_id = (tile_id * NO_PES) + k;
+        double d = getMaxDelay(g_src_id);
+        if (d > maxd)
+	  maxd = d;
+      }
 
-    if (GlobalParams::topology == TOPOLOGY_MESH) 
-    {
-	for (int y = 0; y < GlobalParams::mesh_dim_y; y++)
-	    for (int x = 0; x < GlobalParams::mesh_dim_x; x++) 
-	    {
-		Coord coord;
-		coord.x = x;
-		coord.y = y;
-		int node_id = coord2Id(coord);
-		double d = getMaxDelay(node_id);
-		if (d > maxd)
-		    maxd = d;
-	    }
-
-    }
-    else  // other delta topologies 
-    {
-	for (int y = 0; y < GlobalParams::n_delta_tiles; y++)
-	{
-	    double d = getMaxDelay(y);
-	    if (d > maxd)
-		maxd = d;
-	}
-    }
-
-    return maxd;
+  return maxd;
 }
 
-double GlobalStats::getMaxDelay(const int node_id)
+double GlobalStats::getMaxDelay(const int dst_id)
 {
-    if (GlobalParams::topology == TOPOLOGY_MESH) 
-    {
-	Coord coord = id2Coord(node_id);
+  int tile_id = dst_id / (int) NO_PES;
+  int l_pe_id = dst_id % (int) NO_PES;
 
-	unsigned int received_packets =
-	    noc->t[coord.x][coord.y]->r->stats.getReceivedPackets();
-
-	if (received_packets)
-	    return noc->t[coord.x][coord.y]->r->stats.getMaxDelay();
-	else
-	    return -1.0;
-    }
-    else // other delta topologies
-    {
-	unsigned int received_packets =
-	    noc->core[node_id]->r->stats.getReceivedPackets();
-	if (received_packets)
-	    return noc->core[node_id]->r->stats.getMaxDelay();
-	else
-	    return -1.0;
-    }
-
+  Coord coord = id2Coord(tile_id);
+  unsigned int received_evts = noc->t[coord.x][coord.y]->r->stats.getReceivedEvts(l_pe_id);
+  if (received_evts)
+    return noc->t[coord.x][coord.y]->r->stats.getMaxDelay(l_pe_id);
+  else
+    return -1.0;
 }
 
 double GlobalStats::getMaxDelay(const int src_id, const int dst_id)
 {
-    Tile *tile = noc->searchNode(dst_id);
+  int tile_id = dst_id / (int) NO_PES;
+  int l_pe_id = dst_id % (int) NO_PES;
 
-    assert(tile != NULL);
-
-    return tile->r->stats.getMaxDelay(src_id);
+  Tile* tile = noc->searchNode(tile_id);
+  assert(tile != NULL);
+  return tile->r->stats.getMaxDelay(src_id, l_pe_id);
 }
 
-vector < vector < double > > GlobalStats::getMaxDelayMtx()
+std::vector<std::vector<double> > GlobalStats::getMaxDelayMtx()
 {
-    vector < vector < double > > mtx;
+  std::vector<std::vector<double> > mtx;
+  int p_dimX = GlobalParams::proc_arr_dim_x;
+  int p_dimY = GlobalParams::proc_arr_dim_y;
+  int mat_dim_x = GlobalParams::mesh_dim_x * p_dimX;
+  int mat_dim_y = GlobalParams::mesh_dim_y * p_dimY;
 
-    assert(GlobalParams::topology == TOPOLOGY_MESH); 
+  mtx.resize(mat_dim_y);
+  for (int y = 0; y < mat_dim_y; ++y)
+    mtx[y].resize(mat_dim_x);
 
-    mtx.resize(GlobalParams::mesh_dim_y);
-    for (int y = 0; y < GlobalParams::mesh_dim_y; y++)
-	mtx[y].resize(GlobalParams::mesh_dim_x);
-
-    for (int y = 0; y < GlobalParams::mesh_dim_y; y++)
-	for (int x = 0; x < GlobalParams::mesh_dim_x; x++) 
+  for (int m_y = 0; m_y < GlobalParams::mesh_dim_y; ++m_y)
+    for (int m_x = 0; m_x < GlobalParams::mesh_dim_x; ++m_x)
+    {
+      Coord coord;
+      coord.x = m_x;
+      coord.y = m_y;
+      int tile_id = coord2Id(coord);
+      for (int p_y = 0; p_y < p_dimY; ++p_y)
+	for (int p_x = 0; p_x < p_dimX; ++p_x)
 	{
-	    Coord coord;
-	    coord.x = x;
-	    coord.y = y;
-	    int id = coord2Id(coord);
-	    mtx[y][x] = getMaxDelay(id);
+	  int l_pe_id = (p_y * p_dimX) + p_x;
+	  int g_pe_id = (tile_id * NO_PES) + l_pe_id;
+	  mtx[m_y * p_dimY + p_y][m_x * p_dimX + p_x] = getMaxDelay(g_pe_id);
 	}
+    }
 
-    return mtx;
+  return mtx;
+}
+
+void GlobalStats::setOverallDelays(std::vector<double>& overall_delays) const
+{
+  std::vector<std::vector<double> > tmp_delays;
+  for (int y = 0; y < GlobalParams::mesh_dim_y; ++y)
+    for (int x = 0; x < GlobalParams::mesh_dim_x; ++x)
+    {
+      noc->t[x][y]->r->stats.setDelays(tmp_delays);
+      for (int k = 0; k < NO_PES; ++k)
+	if (tmp_delays[k].size() > 0)
+	  overall_delays.insert(overall_delays.end(), tmp_delays[k].begin(), tmp_delays[k].end());
+    }
+}
+
+long GlobalStats::getOverallQueuedEvts() const
+{
+  long queuedEvts = 0;
+  for (int y = 0; y < GlobalParams::mesh_dim_y; ++y)
+    for (int x = 0; x < GlobalParams::mesh_dim_x; ++x)
+      for (int k = 0; k < NO_PES; ++k)
+	queuedEvts += noc->t[x][y]->pe[k]->getQueuedAEREvts();
+
+  return queuedEvts;
 }
 
 double GlobalStats::getAverageThroughput(const int src_id, const int dst_id)
 {
-    Tile *tile = noc->searchNode(dst_id);
+  int tile_id = dst_id / (int) NO_PES;
+  int l_pe_id = dst_id % (int) NO_PES;
 
-    assert(tile != NULL);
-
-    return tile->r->stats.getAverageThroughput(src_id);
+  Tile* tile = noc->searchNode(tile_id);
+  assert(tile != NULL);
+  return tile->r->stats.getAverageThroughput(src_id, l_pe_id);
 }
-
-/*
-double GlobalStats::getAverageThroughput()
-{
-    unsigned int total_comms = 0;
-    double avg_throughput = 0.0;
-
-    for (int y = 0; y < GlobalParams::mesh_dim_y; y++)
-	for (int x = 0; x < GlobalParams::mesh_dim_x; x++) {
-	    unsigned int ncomms =
-		noc->t[x][y]->r->stats.getTotalCommunications();
-
-	    if (ncomms) {
-		avg_throughput +=
-		    ncomms * noc->t[x][y]->r->stats.getAverageThroughput();
-		total_comms += ncomms;
-	    }
-	}
-
-    avg_throughput /= (double) total_comms;
-
-    return avg_throughput;
-}
-*/
 
 double GlobalStats::getAggregatedThroughput()
 {
-    int total_cycles = GlobalParams::simulation_time - GlobalParams::stats_warm_up_time;
-
-    return (double)getReceivedFlits()/(double)(total_cycles);
-}
-
-unsigned int GlobalStats::getReceivedPackets()
-{
-    unsigned int n = 0;
-
-    if (GlobalParams::topology == TOPOLOGY_MESH) 
-    {
-    	for (int y = 0; y < GlobalParams::mesh_dim_y; y++)
-		for (int x = 0; x < GlobalParams::mesh_dim_x; x++)
-	    n += noc->t[x][y]->r->stats.getReceivedPackets();
-    }
-    else // other delta topologies
-    {
-    	for (int y = 0; y < GlobalParams::n_delta_tiles; y++)
-	    n += noc->core[y]->r->stats.getReceivedPackets();
-    }
-
-    return n;
-}
-
-unsigned int GlobalStats::getReceivedFlits()
-{
-    unsigned int n = 0;
-    if (GlobalParams::topology == TOPOLOGY_MESH) 
-    {
-	for (int y = 0; y < GlobalParams::mesh_dim_y; y++)
-	    for (int x = 0; x < GlobalParams::mesh_dim_x; x++) {
-		n += noc->t[x][y]->r->stats.getReceivedFlits();
-#ifdef TESTING
-		drained_total += noc->t[x][y]->r->local_drained;
-#endif
-	    }
-    }
-    else // other delta topologies
-    {
-	for (int y = 0; y < GlobalParams::n_delta_tiles; y++)
-	{
-	    n += noc->core[y]->r->stats.getReceivedFlits();
-#ifdef TESTING
-	    drained_total += noc->core[y]->r->local_drained;
-#endif
-	}
-    }
-
-    return n;
+  int total_cycles = GlobalParams::simulation_time - GlobalParams::stats_warm_up_time;
+  return (double)getReceivedEvts() / (double)(total_cycles);
 }
 
 double GlobalStats::getThroughput()
 {
-    if (GlobalParams::topology == TOPOLOGY_MESH) 
-    {
-	int number_of_ip = GlobalParams::mesh_dim_x * GlobalParams::mesh_dim_y;
-	return (double)getAggregatedThroughput()/(double)(number_of_ip);
-    }
-    else // other delta topologies
-    {
-	int number_of_ip = GlobalParams::n_delta_tiles;
-	return (double)getAggregatedThroughput()/(double)(number_of_ip);
-    }
+  int number_of_ip = GlobalParams::mesh_dim_x * GlobalParams::mesh_dim_y * NO_PES;
+  return (double)getAggregatedThroughput() / (double)(number_of_ip);
 }
 
-// Only accounting IP that received at least one flit
+// Only accounting for IP that received at least one flit
 double GlobalStats::getActiveThroughput()
 {
-    int total_cycles =
-	GlobalParams::simulation_time -
-	GlobalParams::stats_warm_up_time;
-    unsigned int n = 0;
-    unsigned int trf = 0;
-    unsigned int rf ;
-    if (GlobalParams::topology == TOPOLOGY_MESH) 
-    {
-	for (int y = 0; y < GlobalParams::mesh_dim_y; y++)
-	    for (int x = 0; x < GlobalParams::mesh_dim_x; x++) 
-	    {
-		rf = noc->t[x][y]->r->stats.getReceivedFlits();
+  int total_cycles = GlobalParams::simulation_time - GlobalParams::stats_warm_up_time;
+  unsigned int n_active = 0;
+  unsigned int received_evts = 0;
+  unsigned int total_received_evts = 0;
+  for (int y = 0; y < GlobalParams::mesh_dim_y; ++y)
+    for (int x = 0; x < GlobalParams::mesh_dim_x; ++x)
+      for (int k = 0; k < NO_PES; ++k)
+      {
+	received_evts = noc->t[x][y]->r->stats.getReceivedEvts(k);
+	if (received_evts != 0)
+	  ++n_active;
 
-		if (rf != 0)
-		    n++;
+	total_received_evts += received_evts;
+      }
 
-		trf += rf;
-	    }
-    }
-    else // other delta topologies
-    {
-	for (int y = 0; y < GlobalParams::n_delta_tiles; y++)
-	{
-	    rf = noc->core[y]->r->stats.getReceivedFlits();
-
-	    if (rf != 0)
-		n++;
-
-	    trf += rf;
-	}
-    }
-
-    return (double) trf / (double) (total_cycles * n);
-
+  return (double) total_received_evts / (double) (total_cycles * n_active);
 }
 
-vector < vector < unsigned long > > GlobalStats::getRoutedFlitsMtx()
+unsigned int GlobalStats::getReceivedEvts()
 {
+  unsigned int n = 0;
+  for (int y = 0; y < GlobalParams::mesh_dim_y; ++y)
+    for (int x = 0; x < GlobalParams::mesh_dim_x; ++x)
+      for (int k = 0; k < NO_PES; ++k)
+	n += noc->t[x][y]->r->stats.getReceivedEvts(k);
 
-    vector < vector < unsigned long > > mtx;
-    assert (GlobalParams::topology == TOPOLOGY_MESH); 
-
-    mtx.resize(GlobalParams::mesh_dim_y);
-    for (int y = 0; y < GlobalParams::mesh_dim_y; y++)
-	mtx[y].resize(GlobalParams::mesh_dim_x);
-
-    for (int y = 0; y < GlobalParams::mesh_dim_y; y++)
-	for (int x = 0; x < GlobalParams::mesh_dim_x; x++)
-	    mtx[y][x] = noc->t[x][y]->r->getRoutedFlits();
-
-
-    return mtx;
+  return n;
 }
 
-unsigned int GlobalStats::getWirelessPackets()
+unsigned int GlobalStats::getLocalDeliveries()
 {
-    unsigned int packets = 0;
+  unsigned int n = 0;
+  for (int y = 0; y < GlobalParams::mesh_dim_y; ++y)
+    for (int x = 0; x < GlobalParams::mesh_dim_x; ++x)
+      n += noc->t[x][y]->r->stats.getLocalDeliveries();
 
-    // Wireless noc
-    for (map<int, HubConfig>::iterator it = GlobalParams::hub_configuration.begin();
-            it != GlobalParams::hub_configuration.end();
-            ++it)
-    {
-	int hub_id = it->first;
+  return n;
+}
 
-	map<int,Hub*>::const_iterator i = noc->hub.find(hub_id);
-	Hub * h = i->second;
+std::vector<std::vector<unsigned long> > GlobalStats::getRoutedEvtsMtx()
+{
+  std::vector<std::vector<unsigned long> > mtx;
+  mtx.resize(GlobalParams::mesh_dim_y);
+  for (int y = 0; y < GlobalParams::mesh_dim_y; ++y)
+    mtx[y].resize(GlobalParams::mesh_dim_x);
 
-	packets+= h->wireless_communications_counter;
-    }
-    return packets;
+  for (int y = 0; y < GlobalParams::mesh_dim_y; ++y)
+    for (int x = 0; x < GlobalParams::mesh_dim_x; ++x)
+      mtx[y][x] = noc->t[x][y]->r->getRoutedEvts();
+
+  return mtx;
 }
 
 double GlobalStats::getDynamicPower()
 {
-    double power = 0.0;
-
-    // Electric noc
-    if (GlobalParams::topology == TOPOLOGY_MESH) 
-    {
-	for (int y = 0; y < GlobalParams::mesh_dim_y; y++)
-	    for (int x = 0; x < GlobalParams::mesh_dim_x; x++)
-		power += noc->t[x][y]->r->power.getDynamicPower();
-    }
-    else // other delta topologies
-    {
-	int stg = log2(GlobalParams::n_delta_tiles);
-	int sw = GlobalParams::n_delta_tiles/2; //sw: switch number in each stage
-	// Dimensions of the delta switch block network
-	int dimX = stg;
-	int dimY = sw;
-
-	// power for delta topologies cores
-	for (int y = 0; y < GlobalParams::n_delta_tiles; y++)
-	    power += noc->core[y]->r->power.getDynamicPower();
-
-	// power for delta topologies switches 
-	for (int y = 0; y < dimY; y++)
-	    for (int x = 0; x < dimX; x++)
-		power += noc->t[x][y]->r->power.getDynamicPower();
-    }
-
-    // Wireless noc
-    for (map<int, HubConfig>::iterator it = GlobalParams::hub_configuration.begin();
-	    it != GlobalParams::hub_configuration.end();
-	    ++it)
-    {
-	int hub_id = it->first;
-
-	map<int,Hub*>::const_iterator i = noc->hub.find(hub_id);
-	Hub * h = i->second;
-
-	power+= h->power.getDynamicPower();
-    }
-    return power;
+  double power = 0.0;
+  for (int y = 0; y < GlobalParams::mesh_dim_y; ++y)
+    for (int x = 0; x < GlobalParams::mesh_dim_x; ++x)
+      power += noc->t[x][y]->r->power.getDynamicPower();    // The router accounts for all power contributions
+                                                            // of all elements, including network interfaces
+  return power;
 }
 
 double GlobalStats::getStaticPower()
 {
-    double power = 0.0;
+  double power = 0.0;
+  for (int y = 0; y < GlobalParams::mesh_dim_y; ++y)
+    for (int x = 0; x < GlobalParams::mesh_dim_x; ++x)
+      power += noc->t[x][y]->r->power.getStaticPower();
 
-    if (GlobalParams::topology == TOPOLOGY_MESH) 
+  return power;
+}
+	  
+void GlobalStats::showStats(std::ostream& out, bool detailed)
+{
+  if (detailed)
+  {
+    out << std::endl << "detailed = [" << std::endl;
+    for (int y = 0; y < GlobalParams::mesh_dim_y; ++y)
+      for (int x = 0; x < GlobalParams::mesh_dim_x; ++x)
+	noc->t[x][y]->r->stats.showStats(out, true);
+
+    out << "];" << std::endl;
+
+    // Show MaxDelay matrix
+    std::vector<std::vector<double> > md_mtx = getMaxDelayMtx();
+    out << std::endl << "max_delay = [" << std::endl;
+    for (unsigned int y = 0; y < md_mtx.size(); ++y)
     {
-    	for (int y = 0; y < GlobalParams::mesh_dim_y; y++)
-		for (int x = 0; x < GlobalParams::mesh_dim_x; x++)
-	    power += noc->t[x][y]->r->power.getStaticPower();
+      out << "    ";
+      for (unsigned int x = 0; x < md_mtx[y].size(); ++x)
+	out << std::setw(6) << md_mtx[y][x];
+
+      out << std::endl;
     }
-    else // other delta topologies
+    out << "];" << std::endl;
+
+    // Show RoutedEvts matrix
+    std::vector<std::vector<unsigned long> > re_mtx = getRoutedEvtsMtx();
+    out << std::endl << "routed_evts = [" << std::endl;
+    for (unsigned int y = 0; y < re_mtx.size(); ++y)
     {
-	int stg = log2(GlobalParams::n_delta_tiles);
-	int sw = GlobalParams::n_delta_tiles/2; //sw: switch number in each stage
-	// Dimensions of the delta switch block network
-	int dimX = stg;
-	int dimY = sw;
-	// power for delta topologies switches 
-	for (int y = 0; y < dimY; y++)
-	    for (int x = 0; x < dimX; x++)
-		power += noc->t[x][y]->r->power.getDynamicPower();
+      out << "    ";
+      for (unsigned int x = 0; x < re_mtx[y].size(); ++x)
+	out << std::setw(10) << re_mtx[y][x];
 
-	// delta cores
-    	for (int y = 0; y < GlobalParams::n_delta_tiles; y++)
-	    power += noc->core[y]->r->power.getStaticPower();
+      out << std::endl;
     }
+    out << "];" << std::endl;
 
-    // Wireless noc
-    for (map<int, HubConfig>::iterator it = GlobalParams::hub_configuration.begin();
-            it != GlobalParams::hub_configuration.end();
-            ++it)
-    {
-	int hub_id = it->first;
+    // Show power breakdown
+    showPowerBreakdown(out);
+  }
 
-	map<int,Hub*>::const_iterator i = noc->hub.find(hub_id);
-	Hub * h = i->second;
+  out << "% Total received events: " << getReceivedEvts() << std::endl;
+  out << "% Locally delivered events: " << getLocalDeliveries() << std::endl;
+  out << "% Global average delay (cycles): " << getAverageDelay() << std::endl;
+  out << "% Maximum delay (cycles): " << getMaxDelay() << std::endl;
+  out << "% Network throughput (evts/cycle): " << getAggregatedThroughput() << std::endl;
+  out << "% Average PE throughput (evts/cycle/PE): " << getThroughput() << std::endl;
+  out << "% Total energy (J): " << getTotalPower() << std::endl;
+  out << "% \tDynamic energy (J): " << getDynamicPower() << std::endl;
+  out << "% \tStatic energy (J): " << getStaticPower() << std::endl;
+  out << "% CAM look-up failure: " << (checkCamFailure() ? "true" : "false") << std::endl;
+  out << std::endl;
 
-	power+= h->power.getStaticPower();
-    }
-    return power;
+  if (GlobalParams::create_output_files)
+  {
+    setOverallDelays(overall_delays);
+    assert(exportStatData());
+  }
+  if (GlobalParams::show_buffer_stats)
+    showBufferStats(out);
 }
 
-void GlobalStats::showStats(std::ostream & out, bool detailed)
+void GlobalStats::showBufferStats(std::ostream& out)
 {
-    if (detailed) 
+  out << std::endl;
+  out << "Buffer Statistics (invalid buffers are blanked out)" << std::endl;
+  out << std::left << std::setw(16) << "Router ID" << std::setw(16) << "Buffer North" << std::setw(16) << "Buffer East";
+  out << std::setw(16) << "Buffer South" << std::setw(16) << "Buffer West";
+  for (int k = 0; k < NO_PES; ++k)
+  {
+    std::string pe_name = std::string("Buffer PE").append(std::to_string(k));
+    out << std::setw(16) << pe_name;
+  }
+  out << std::endl;
+  out << std::left << std::setw(16) << "" << std::setw(8) << "Mean" << std::setw(8) << "Max" << std::setw(8) << "Mean" << std::setw(8) << "Max";
+  out << std::setw(8) << "Mean" << std::setw(8) << "Max" << std::setw(8) << "Mean" << std::setw(8) << "Max";
+  for (int k = 0; k < NO_PES; ++k)
+    out << std::setw(8) << "Mean" << std::setw(8) << "Max";
+
+  out << std::endl;
+  for (int y = 0; y < GlobalParams::mesh_dim_y; ++y)
+    for (int x = 0; x < GlobalParams::mesh_dim_x; ++x)
     {
-	assert (GlobalParams::topology == TOPOLOGY_MESH); 
-	out << endl << "detailed = [" << endl;
-
-	for (int y = 0; y < GlobalParams::mesh_dim_y; y++)
-	    for (int x = 0; x < GlobalParams::mesh_dim_x; x++)
-		noc->t[x][y]->r->stats.showStats(y * GlobalParams:: mesh_dim_x + x, out, true);
-	out << "];" << endl;
-
-	// show MaxDelay matrix
-	vector < vector < double > > md_mtx = getMaxDelayMtx();
-
-	out << endl << "max_delay = [" << endl;
-	for (unsigned int y = 0; y < md_mtx.size(); y++) 
-	{
-	    out << "   ";
-	    for (unsigned int x = 0; x < md_mtx[y].size(); x++)
-		out << setw(6) << md_mtx[y][x];
-	    out << endl;
-	}
-	out << "];" << endl;
-
-	// show RoutedFlits matrix
-	vector < vector < unsigned long > > rf_mtx = getRoutedFlitsMtx();
-
-	out << endl << "routed_flits = [" << endl;
-	for (unsigned int y = 0; y < rf_mtx.size(); y++) 
-	{
-	    out << "   ";
-	    for (unsigned int x = 0; x < rf_mtx[y].size(); x++)
-		out << setw(10) << rf_mtx[y][x];
-	    out << endl;
-	}
-	out << "];" << endl;
-
-	showPowerBreakDown(out);
-	showPowerManagerStats(out);
-    }
-
-#ifdef DEBUG
-
-    if (GlobalParams::topology == TOPOLOGY_MESH)
-    {
-	for (int y = 0; y < GlobalParams::mesh_dim_y; y++)
-	    for (int x = 0; x < GlobalParams::mesh_dim_x; x++)
-		out << "PE["<<x << "," << y<< "]" << noc->t[x][y]->pe->getQueueSize()<< ",";
-    }
-    else // other delta topologies
-    {
-	out << "Queue sizes: " ;
-	for (int i=0;i<GlobalParams::n_delta_tiles;i++)
-		out << "PE"<<i << ": " << noc->core[i]->pe->getQueueSize()<< ",";
-	out << endl;
-    }
-	
-    out << endl;
-#endif
-
-    //int total_cycles = GlobalParams::simulation_time - GlobalParams::stats_warm_up_time;
-    out << "% Total received packets: " << getReceivedPackets() << endl;
-    out << "% Total received flits: " << getReceivedFlits() << endl;
-    out << "% Received/Ideal flits Ratio: " << getReceivedIdealFlitRatio() << endl;
-    out << "% Average wireless utilization: " << getWirelessPackets()/(double)getReceivedPackets() << endl;
-    out << "% Global average delay (cycles): " << getAverageDelay() << endl;
-    out << "% Max delay (cycles): " << getMaxDelay() << endl;
-    out << "% Network throughput (flits/cycle): " << getAggregatedThroughput() << endl;
-    out << "% Average IP throughput (flits/cycle/IP): " << getThroughput() << endl;
-    out << "% Total energy (J): " << getTotalPower() << endl;
-    out << "% \tDynamic energy (J): " << getDynamicPower() << endl;
-    out << "% \tStatic energy (J): " << getStaticPower() << endl;
-
-    if (GlobalParams::show_buffer_stats)
-      showBufferStats(out);
-
-}
-
-void GlobalStats::updatePowerBreakDown(map<string,double> &dst,PowerBreakdown* src)
-{
-    for (int i=0;i!=src->size;i++)
-    {
-		dst[src->breakdown[i].label]+=src->breakdown[i].value;
+      out << std::setw(16) << noc->t[x][y]->r->local_id;
+      noc->t[x][y]->r->ShowBufferStats(out);
     }
 }
 
-void GlobalStats::showPowerManagerStats(std::ostream & out)
+void GlobalStats::showPowerBreakdown(std::ostream& out)
 {
-    std::streamsize p = out.precision();
-    int total_cycles = sc_time_stamp().to_double() / GlobalParams::clock_period_ps - GlobalParams::reset_time;
+  std::map<std::string, double> power_dynamic;
+  std::map<std::string, double> power_static;
 
-    out.precision(4);
-
-    out << "powermanager_stats_tx = [" << endl;
-    out << "%\tFraction of: TX Transceiver off (TTXoff), AntennaBufferTX off (ABTXoff) " << endl;
-    out << "%\tHUB\tTTXoff\tABTXoff\t" << endl;
-
-    for (map<int, HubConfig>::iterator it = GlobalParams::hub_configuration.begin();
-            it != GlobalParams::hub_configuration.end();
-            ++it)
+  for (int y = 0; y < GlobalParams::mesh_dim_y; ++y)
+    for (int x = 0; x < GlobalParams::mesh_dim_x; ++x)
     {
-	int hub_id = it->first;
-
-	map<int,Hub*>::const_iterator i = noc->hub.find(hub_id);
-	Hub * h = i->second;
-
-	out << "\t" << hub_id << "\t" << std::fixed << (double)h->total_ttxoff_cycles/total_cycles << "\t";
-
-	int s = 0;
-	for (map<int,int>::iterator i = h->abtxoff_cycles.begin(); i!=h->abtxoff_cycles.end();i++) s+=i->second;
-
-	out << (double)s/h->abtxoff_cycles.size()/total_cycles << endl;
+      updatePowerBreakdown(power_dynamic, noc->t[x][y]->r->power.getDynamicPowerBreakdown());
+      updatePowerBreakdown(power_static, noc->t[x][y]->r->power.getStaticPowerBreakdown());
     }
 
-    out << "];" << endl;
-
-
-
-    out << "powermanager_stats_rx = [" << endl;
-    out << "%\tFraction of: RX Transceiver off (TRXoff), AntennaBufferRX off (ABRXoff), BufferToTile off (BTToff) " << endl;
-    out << "%\tHUB\tTRXoff\tABRXoff\tBTToff\t" << endl;
-
-
-
-    for (map<int, HubConfig>::iterator it = GlobalParams::hub_configuration.begin();
-            it != GlobalParams::hub_configuration.end();
-            ++it)
-    {
-	string bttoff_str;
-
-	out.precision(4);
-
-	int hub_id = it->first;
-
-	map<int,Hub*>::const_iterator i = noc->hub.find(hub_id);
-	Hub * h = i->second;
-
-	out << "\t" << hub_id << "\t" << std::fixed << (double)h->total_sleep_cycles/total_cycles << "\t";
-
-	int s = 0;
-	for (map<int,int>::iterator i = h->buffer_rx_sleep_cycles.begin();
-		i!=h->buffer_rx_sleep_cycles.end();i++)
-	    s+=i->second;
-
-	out << (double)s/h->buffer_rx_sleep_cycles.size()/total_cycles << "\t";
-
-	s = 0;
-	for (map<int,int>::iterator i = h->buffer_to_tile_poweroff_cycles.begin();
-		i!=h->buffer_to_tile_poweroff_cycles.end();i++)
-	{
-	    double bttoff_fraction = i->second/(double)total_cycles;
-	    s+=i->second;
-	    if (bttoff_fraction<0.25)
-		bttoff_str+=" ";
-	    else if (bttoff_fraction<0.5)
-		    bttoff_str+=".";
-	    else if (bttoff_fraction<0.75)
-		    bttoff_str+="o";
-	    else if (bttoff_fraction<0.90)
-		    bttoff_str+="O";
-	    else 
-		bttoff_str+="0";
-	    
-
-	}
-	out << (double)s/h->buffer_to_tile_poweroff_cycles.size()/total_cycles << "\t" << bttoff_str << endl;
-    }
-
-    out << "];" << endl;
-
-    out.unsetf(std::ios::fixed);
-
-    out.precision(p);
-
+  printMap("power_dynamic", power_dynamic, out);
+  printMap("power_static", power_static, out);
 }
-
-void GlobalStats::showPowerBreakDown(std::ostream & out)
-{
-    map<string,double> power_dynamic;
-    map<string,double> power_static;
-
-    if (GlobalParams::topology == TOPOLOGY_MESH) 
-    {
-	for (int y = 0; y < GlobalParams::mesh_dim_y; y++)
-	    for (int x = 0; x < GlobalParams::mesh_dim_x; x++)
-	    {
-		updatePowerBreakDown(power_dynamic, noc->t[x][y]->r->power.getDynamicPowerBreakDown());
-		updatePowerBreakDown(power_static, noc->t[x][y]->r->power.getStaticPowerBreakDown());
-	    }
-    }
-    else // other delta topologies
-    {
-	for (int y = 0; y < GlobalParams::n_delta_tiles; y++)
-	{
-	    updatePowerBreakDown(power_dynamic, noc->core[y]->r->power.getDynamicPowerBreakDown());
-	    updatePowerBreakDown(power_static, noc->core[y]->r->power.getStaticPowerBreakDown());
-	}
-    }
-
-    for (map<int, HubConfig>::iterator it = GlobalParams::hub_configuration.begin();
-	    it != GlobalParams::hub_configuration.end();
-	    ++it)
-    {
-	int hub_id = it->first;
-
-	map<int,Hub*>::const_iterator i = noc->hub.find(hub_id);
-	Hub * h = i->second;
-
-	updatePowerBreakDown(power_dynamic, 
-		h->power.getDynamicPowerBreakDown());
-
-	updatePowerBreakDown(power_static, 
-		h->power.getStaticPowerBreakDown());
-    }
-
-    printMap("power_dynamic",power_dynamic,out);
-    printMap("power_static",power_static,out);
-
-}
-
-
-
-void GlobalStats::showBufferStats(std::ostream & out)
-{
-  out << "Router id\tBuffer N\t\tBuffer E\t\tBuffer S\t\tBuffer W\t\tBuffer L" << endl;
-  out << "         \tMean\tMax\tMean\tMax\tMean\tMax\tMean\tMax\tMean\tMax" << endl;
   
-  if (GlobalParams::topology == TOPOLOGY_MESH) 
-    {
-    	for (int y = 0; y < GlobalParams::mesh_dim_y; y++)
-    	for (int x = 0; x < GlobalParams::mesh_dim_x; x++)
-      	{
-			out << noc->t[x][y]->r->local_id;
-			noc->t[x][y]->r->ShowBuffersStats(out);
-			out << endl;
-     	}
-    }
-    else // other delta topologies
-    {
-    	for (int y = 0; y < GlobalParams::n_delta_tiles; y++)
-    	{
-			out << noc->core[y]->r->local_id;
-			noc->core[y]->r->ShowBuffersStats(out);
-			out << endl;
-     	}
-    }
-
-}
-
-double GlobalStats::getReceivedIdealFlitRatio()
+bool GlobalStats::exportStatData(void)
 {
-    int total_cycles;
-    total_cycles= GlobalParams::simulation_time - GlobalParams::stats_warm_up_time;
-    double ratio;
-    if (GlobalParams::topology == TOPOLOGY_MESH) 
-    {
-	ratio = getReceivedFlits() /(GlobalParams::packet_injection_rate * (GlobalParams::min_packet_size +
-		    GlobalParams::max_packet_size)/2 * total_cycles * GlobalParams::mesh_dim_y * GlobalParams::mesh_dim_x);
-    }
-    else // other delta topologies
-    {
-	ratio = getReceivedFlits() /(GlobalParams::packet_injection_rate * (GlobalParams::min_packet_size +
-		    GlobalParams::max_packet_size)/2 * total_cycles * GlobalParams::n_delta_tiles);
-    }
-    return ratio;
+  std::string delayOut = (std::string("Delays").append(GlobalParams::output_file_suffix)).append(".csv");
+  std::string routedEvts = (std::string("Evts_Routed").append(GlobalParams::output_file_suffix)).append(".csv");
+  boost::filesystem::path data("data");
+  try
+  {
+    bool created = boost::filesystem::create_directory(data);
+    if (created) std::cout << "Created folder 'data' used for output files" << std::endl;
+    else std::cout << "Folder 'data' already existed. Using it for output files" << std::endl;
+  }
+  catch (const boost::filesystem::filesystem_error& fse)
+  {
+    std::cout << fse.what() << std::endl;
+    return false;
+  }
+  boost::filesystem::path data1 = data;
+  std::ofstream of_dout((data1 /= delayOut).c_str());
+  if (!of_dout)
+    return false;
+  if(overall_delays.size() > 0)
+  {
+    of_dout << "#Delays collected from all nodes" << std::endl;
+    for (unsigned int i = 0; i < overall_delays.size(); ++i)
+      of_dout << overall_delays[i] << std::endl;
+  }
+  else
+    std::cout << "Vector overall_delays empty. Did you call setOverallDelays(...)?" << std::endl;
+  of_dout.close();
+  boost::filesystem::path data2 = data;
+  std::ofstream of_rtdout((data2 /= routedEvts).c_str());
+  if (!of_rtdout)
+    return false;
+  of_rtdout << "#Matrix containing the number of routed flits per router" << std::endl;
+  std::vector<std::vector<unsigned long> > evts_routed = getRoutedEvtsMtx();
+  for (unsigned int y = 0; y < evts_routed.size(); ++y)
+  {
+    for (unsigned int x = 0; x < evts_routed[y].size(); ++x)
+      of_rtdout << x << ", " << y << ", " << evts_routed[y][x] << std::endl;
+
+    of_rtdout << std::endl;
+  }
+  of_rtdout.close();
+  return true;
 }

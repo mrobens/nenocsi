@@ -7,150 +7,123 @@
  *
  * This file contains the declaration of the tile
  */
+/*\\\********************************************************************************
+ * Downloaded March 23, 2022 from
+ * https://github.com/davidepatti/noxim/tree/c52ebce2217e57bcd4ff11a97b400323bd00acd5
+ ************************************************************************************
+ *
+ * McAERsim - NoC simulator with tree-based multicast support for AER packets
+ * Modifications Copyright (C) 2022-2023 Forschungszentrum Juelich GmbH, ZEA-2
+ * Author: Markus Robens <https://www.fz-juelich.de/profile/robens_m>
+ * For the license applied to these modifications and McAERsim as a whole
+ * refer to file ../doc/LICENSE_MCAERSIM.txt
+ * 
+ * 2022-09-08: McAERsim does not support virtual channels, wireless connections, and 
+ *             advanced selection functions. It uses a different data type for
+ *             transmissions and adds support for multiple processing elements per 
+ *             tile. The connectivity established in this file has been adapted 
+ *             accordingly.
+ *
+ *///********************************************************************************
 
-#ifndef __NOXIMTILE_H__
-#define __NOXIMTILE_H__
+#ifndef __MCAERSIMTILE_H__
+#define __MCAERSIMTILE_H__
 
 #include <systemc.h>
 #include "Router.h"
 #include "ProcessingElement.h"
-using namespace std;
 
 SC_MODULE(Tile)
 {
-    SC_HAS_PROCESS(Tile);
+  // I/O Ports
+  sc_in_clk clock;                                               // Input clock for the tile
+  sc_in<bool> reset;                                             // Reset signal for the tile
 
-    
+  sc_in<AER_EVT> evt_rx[DIRECTIONS];                             // Input channels
+  sc_in<bool> req_rx[DIRECTIONS];                                // Incoming request signals associated with the input channels
+  sc_out<bool> ack_rx[DIRECTIONS];                               // Outgoing acknowledge signals associated with the input channels
+  sc_out<bool> buffer_full_status_rx[DIRECTIONS];                // Outgoing buffer full status signals associated with the input channels
 
-    // I/O Ports
-    sc_in_clk clock;		                // The input clock for the tile
-    sc_in <bool> reset;	                        // The reset signal for the tile
+  sc_out<AER_EVT> evt_tx[DIRECTIONS];                            // Output channels
+  sc_out<bool> req_tx[DIRECTIONS];                               // Outgoing request signals associated with the output channels
+  sc_in<bool> ack_tx[DIRECTIONS];                                // Incoming acknowledge signals associated with the output channels
+  sc_in<bool> buffer_full_status_tx[DIRECTIONS];                 // Incoming buffer full status signals associated with the output channels
 
-    int local_id; // Unique ID
+  // Signals required for router <-> PE connections
+  sc_signal<AER_EVT> evt_rx_local[NO_PES];
+  sc_signal<bool> req_rx_local[NO_PES];
+  sc_signal<bool> ack_rx_local[NO_PES];
+  sc_signal<bool> buffer_full_status_rx_local[NO_PES];
 
-    sc_in <Flit> flit_rx[DIRECTIONS];	// The input channels
-    sc_in <bool> req_rx[DIRECTIONS];	        // The requests associated with the input channels
-    sc_out <bool> ack_rx[DIRECTIONS];	        // The outgoing ack signals associated with the input channels
-    sc_out <TBufferFullStatus> buffer_full_status_rx[DIRECTIONS];
-
-    sc_out <Flit> flit_tx[DIRECTIONS];	// The output channels
-    sc_out <bool> req_tx[DIRECTIONS];	        // The requests associated with the output channels
-    sc_in <bool> ack_tx[DIRECTIONS];	        // The outgoing ack signals associated with the output channels
-    sc_in <TBufferFullStatus> buffer_full_status_tx[DIRECTIONS];
-
-    // hub specific ports
-    sc_in <Flit> hub_flit_rx;	// The input channels
-    sc_in <bool> hub_req_rx;	        // The requests associated with the input channels
-    sc_out <bool> hub_ack_rx;	        // The outgoing ack signals associated with the input channels
-    sc_out <TBufferFullStatus> hub_buffer_full_status_rx;
-
-    sc_out <Flit> hub_flit_tx;	// The output channels
-    sc_out <bool> hub_req_tx;	        // The requests associated with the output channels
-    sc_in <bool> hub_ack_tx;	        // The outgoing ack signals associated with the output channels
-    sc_in <TBufferFullStatus> hub_buffer_full_status_tx;	
+  sc_signal<AER_EVT> evt_tx_local[NO_PES];
+  sc_signal<bool> req_tx_local[NO_PES];
+  sc_signal<bool> ack_tx_local[NO_PES];
+  sc_signal<bool> buffer_full_status_tx_local[NO_PES];
 
 
-    // NoP related I/O and signals
-    sc_out <int> free_slots[DIRECTIONS];
-    sc_in <int> free_slots_neighbor[DIRECTIONS];
-    sc_out < NoP_data > NoP_data_out[DIRECTIONS];
-    sc_in < NoP_data > NoP_data_in[DIRECTIONS];
+  // Registers
+  int local_id;                                                  // Unique ID
 
-    sc_signal <int> free_slots_local;
-    sc_signal <int> free_slots_neighbor_local;
+  // Instances
+  Router *r;                                                     // Router instance
+  ProcessingElement *pe[NO_PES];                                 // Processing element instances
 
-    // Signals required for Router-PE connection
-    sc_signal <Flit> flit_rx_local;	
-    sc_signal <bool> req_rx_local;     
-    sc_signal <bool> ack_rx_local;
-    sc_signal <TBufferFullStatus> buffer_full_status_rx_local;
+  // Constructor
 
-    sc_signal <Flit> flit_tx_local;
-    sc_signal <bool> req_tx_local;
-    sc_signal <bool> ack_tx_local;
-    sc_signal <TBufferFullStatus> buffer_full_status_tx_local;
+  Tile(sc_module_name nm, int _id): sc_module(nm)
+  {
+    local_id = _id;
 
+    // Router pin assignment
+    r = new Router("Router");
+    r->clock(clock);
+    r->reset(reset);
+    for (int i=0; i < DIRECTIONS; ++i)
+    {
+      r->evt_rx[i](evt_rx[i]);
+      r->req_rx[i](req_rx[i]);
+      r->ack_rx[i](ack_rx[i]);
+      r->buffer_full_status_rx[i](buffer_full_status_rx[i]);
 
-    // Instances
-    Router *r;		                // Router instance
-    ProcessingElement *pe;	                // Processing Element instance
-
-    // Constructor
-
-    Tile(sc_module_name nm, int id): sc_module(nm) {
-    local_id = id;
-	
-    // Router pin assignments
-	r = new Router("Router");
-	r->clock(clock);
-	r->reset(reset);
-	for (int i = 0; i < DIRECTIONS; i++) {
-	    r->flit_rx[i] (flit_rx[i]);
-	    r->req_rx[i] (req_rx[i]);
-	    r->ack_rx[i] (ack_rx[i]);
-	    r->buffer_full_status_rx[i](buffer_full_status_rx[i]);
-
-	    r->flit_tx[i] (flit_tx[i]);
-	    r->req_tx[i] (req_tx[i]);
-	    r->ack_tx[i] (ack_tx[i]);
-	    r->buffer_full_status_tx[i](buffer_full_status_tx[i]);
-
-	    r->free_slots[i] (free_slots[i]);
-	    r->free_slots_neighbor[i] (free_slots_neighbor[i]);
-
-	    // NoP 
-	    r->NoP_data_out[i] (NoP_data_out[i]);
-	    r->NoP_data_in[i] (NoP_data_in[i]);
-	}
-	
-	// local
-	r->flit_rx[DIRECTION_LOCAL] (flit_tx_local);
-	r->req_rx[DIRECTION_LOCAL] (req_tx_local);
-	r->ack_rx[DIRECTION_LOCAL] (ack_tx_local);
-	r->buffer_full_status_rx[DIRECTION_LOCAL] (buffer_full_status_tx_local);
-
-	r->flit_tx[DIRECTION_LOCAL] (flit_rx_local);
-	r->req_tx[DIRECTION_LOCAL] (req_rx_local);
-	r->ack_tx[DIRECTION_LOCAL] (ack_rx_local);
-	r->buffer_full_status_tx[DIRECTION_LOCAL] (buffer_full_status_rx_local);
-
-
-	// hub related
-	r->flit_rx[DIRECTION_HUB] (hub_flit_rx);
-	r->req_rx[DIRECTION_HUB] (hub_req_rx);
-	r->ack_rx[DIRECTION_HUB] (hub_ack_rx);
-	r->buffer_full_status_rx[DIRECTION_HUB] (hub_buffer_full_status_rx);
-
-	r->flit_tx[DIRECTION_HUB] (hub_flit_tx);
-	r->req_tx[DIRECTION_HUB] (hub_req_tx);
-	r->ack_tx[DIRECTION_HUB] (hub_ack_tx);
-	r->buffer_full_status_tx[DIRECTION_HUB] (hub_buffer_full_status_tx);
-
-
-	// Processing Element pin assignments
-	pe = new ProcessingElement("ProcessingElement");
-	pe->clock(clock);
-	pe->reset(reset);
-
-	pe->flit_rx(flit_rx_local);
-	pe->req_rx(req_rx_local);
-	pe->ack_rx(ack_rx_local);
-	pe->buffer_full_status_rx(buffer_full_status_rx_local);
-	
-
-	pe->flit_tx(flit_tx_local);
-	pe->req_tx(req_tx_local);
-	pe->ack_tx(ack_tx_local);
-	pe->buffer_full_status_tx(buffer_full_status_tx_local);
-
-	// NoP
-	//
-	r->free_slots[DIRECTION_LOCAL] (free_slots_local);
-	r->free_slots_neighbor[DIRECTION_LOCAL] (free_slots_neighbor_local);
-	pe->free_slots_neighbor(free_slots_neighbor_local);
-
+      r->evt_tx[i](evt_tx[i]);
+      r->req_tx[i](req_tx[i]);
+      r->ack_tx[i](ack_tx[i]);
+      r->buffer_full_status_tx[i](buffer_full_status_tx[i]);
     }
+    // Local connections
+    for (int i=0; i < NO_PES; ++i)
+    {
+      r->evt_rx[DIRECTIONS + i](evt_tx_local[i]);
+      r->req_rx[DIRECTIONS + i](req_tx_local[i]);
+      r->ack_rx[DIRECTIONS + i](ack_tx_local[i]);
+      r->buffer_full_status_rx[DIRECTIONS + i](buffer_full_status_tx_local[i]);
 
-};
+      r->evt_tx[DIRECTIONS + i](evt_rx_local[i]);
+      r->req_tx[DIRECTIONS + i](req_rx_local[i]);
+      r->ack_tx[DIRECTIONS + i](ack_rx_local[i]);
+      r->buffer_full_status_tx[DIRECTIONS + i](buffer_full_status_rx_local[i]);
+    }
+    // Processing element assignment
+    char pe_name[16];
+    for (int i=0; i < NO_PES; ++i)
+    {
+      int j = local_id * NO_PES + i;
+      sprintf(pe_name, "PE_%d", j);
+      pe[i] = new ProcessingElement(pe_name);
+      pe[i]->clock(clock);
+      pe[i]->reset(reset);
 
-#endif
+      pe[i]->evt_rx(evt_rx_local[i]);
+      pe[i]->req_rx(req_rx_local[i]);
+      pe[i]->ack_rx(ack_rx_local[i]);
+      pe[i]->buffer_full_status_rx(buffer_full_status_rx_local[i]);
+
+      pe[i]->evt_tx(evt_tx_local[i]);
+      pe[i]->req_tx(req_tx_local[i]);
+      pe[i]->ack_tx(ack_tx_local[i]);
+      pe[i]->buffer_full_status_tx(buffer_full_status_tx_local[i]);
+    }
+  } // Constructor
+}; // SC_MODULE
+
+#endif /* __MCAERSIMTILE_H__ */

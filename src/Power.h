@@ -7,165 +7,88 @@
  *
  * This file contains the declaration of the power model
  */
+/*\\\********************************************************************************
+ * Downloaded March 23, 2022 from
+ * https://github.com/davidepatti/noxim/tree/c52ebce2217e57bcd4ff11a97b400323bd00acd5
+ ************************************************************************************
+ *
+ * McAERsim - NoC simulator with tree-based multicast support for AER packets
+ * Modifications Copyright (C) 2022-2023 Forschungszentrum Juelich GmbH, ZEA-2
+ * Author: Markus Robens <https://www.fz-juelich.de/profile/robens_m>
+ * For the license applied to these modifications and McAERsim as a whole
+ * refer to file ../doc/LICENSE_MCAERSIM.txt
+ * 
+ * 2022-09-11: In McAERsim, there is no support for different routing and selection
+ *             functions as well as wireless connections. Methods and attributes
+ *             have been simplified accordingly. Since a different router pipeline
+ *             model is used, methods and attributes have been adapted. Energy
+ *             consumed by the crossbar has been made variable, because varying
+ *             numbers of active outputs are possible. The makro definition of
+ *             W2J(...) has been shifted from Power.cpp to Power.h.
+ *
+ *///******************************************************************************** 
 
-#ifndef __NOXIMPOWER_H__
-#define __NOXIMPOWER_H__
+#ifndef __MCAERSIMPOWER_H__
+#define __MCAERSIMPOWER_H__
 
 #include <cassert>
-#include <map>
+#include <fstream>
 #include "DataStructs.h"
+#include "GlobalParams.h"
 
-#include "yaml-cpp/yaml.h"
+#define W2J(watt) ((watt)*GlobalParams::clock_period_ps*1.0e-12);
 
+struct Power
+{
+  Power();
+  void configureRouter(int link_width, int buffer_depth, int buffer_item_size);
+  
+  void bufferRouterPush();
+  void bufferRouterPop();
+  void bufferRouterFront();
+  void arbitration();
+  void tcam_lookup();
+  void sram_lookup();
+  void crossbar(const int no_out);
+  void r2rLink();
+  void networkInterface();
 
+  void leakageBufferRouter();
+  void leakageNetworkInterface();
+  void leakageRouter();
 
-using namespace std;
+  double getDynamicPower();
+  double getStaticPower();
+  double getTotalPower() {return (getDynamicPower() + getStaticPower());}
 
-class Power {
+  PowerBreakdown* getDynamicPowerBreakdown() {return &power_dynamic;}
+  PowerBreakdown* getStaticPowerBreakdown() {return &power_static;}
 
-  public:
+ private:
 
-    Power();
+  double total_power;
+  double buffer_router_push_pwr_d;
+  double buffer_router_pop_pwr_d;
+  double buffer_router_front_pwr_d;
+  double buffer_router_pwr_s;
 
+  double arbitration_pwr_d;
+  double arbitration_pwr_s;
+  double tcam_lookup_pwr_d;
+  double tcam_lookup_pwr_s;
+  double sram_lookup_pwr_d;
+  double sram_lookup_pwr_s;
+  double crossbar_pwr_d[RADIX];
+  double crossbar_pwr_s[RADIX];
+  double link_r2r_pwr_d;
+  double link_r2r_pwr_s;
+  double ni_pwr_d;
+  double ni_pwr_s;
 
-    void configureRouter(int link_width,
-	                 int buffer_depth,
-			 int buffer_item_size,
-			 string routing_function,
-			 string selection_function);
-
-    void configureHub(int link_width, 
-	              int buffer_to_tile_depth, 
-	              int buffer_from_tile_depth, 
-		      int buffer_item_size, 
-		      int antenna_buffer_rx_depth, 
-		      int antenna_buffer_tx_depth, 
-		      int antenna_buffer_item_size, 
-		      int data_rate_gbs);
-
-    void bufferRouterPush(); 
-    void bufferRouterPop(); 
-    void bufferRouterFront(); 
-    void bufferToTilePush(); 
-    void bufferToTilePop(); 
-    void bufferToTileFront(); 
-    void bufferFromTilePush(); 
-    void bufferFromTilePop(); 
-    void bufferFromTileFront(); 
-    void antennaBufferPush();
-    void antennaBufferPop();
-
-    void antennaBufferFront(); 
-    void wirelessTx(int src,int dst,int length);
-    void wirelessDynamicRx();
-    void wirelessSnooping();
-
-    void routing();
-    void selection(); 
-    void crossBar(); 
-    void r2hLink(); 
-    void r2rLink(); 
-    void networkInterface();
-
-    void leakageBufferRouter();
-    void leakageBufferToTile();
-    void leakageBufferFromTile();
-    void leakageAntennaBuffer();
-    void leakageLinkRouter2Router();
-    void leakageLinkRouter2Hub();
-    void leakageRouter();
-    void leakageTransceiverRx();
-    void leakageTransceiverTx();
-    void biasingRx();
-    void biasingTx();
-
-    double getDynamicPower();
-    double getStaticPower();
-
-    double getTotalPower() {
-	return (getDynamicPower() + getStaticPower());
-    } 
-
-
-    void printBreakDown(std::ostream & out);
-
-
-    PowerBreakdown* getDynamicPowerBreakDown(){ return &power_dynamic;}
-    PowerBreakdown* getStaticPowerBreakDown(){ return &power_static;}
-
-    void rxSleep(int cycles);
-    bool isSleeping();
-
-  private:
-
-    double total_power_s;
-
-    double buffer_router_push_pwr_d;
-    double buffer_router_pop_pwr_d;
-    double buffer_router_front_pwr_d;
-    double buffer_router_pwr_s;
-    
-    double buffer_to_tile_push_pwr_d;
-    double buffer_to_tile_pop_pwr_d;
-    double buffer_to_tile_front_pwr_d;
-    double buffer_to_tile_pwr_s;
-
-    double buffer_from_tile_push_pwr_d;
-    double buffer_from_tile_pop_pwr_d;
-    double buffer_from_tile_front_pwr_d;
-    double buffer_from_tile_pwr_s;
-
-    double antenna_buffer_push_pwr_d;
-    double antenna_buffer_pop_pwr_d;
-    double antenna_buffer_front_pwr_d;
-    double antenna_buffer_pwr_s;
-
-    double wireless_rx_pwr;
-    double transceiver_tx_pwr_s;
-    double transceiver_rx_pwr_s;
-    double transceiver_tx_pwr_biasing;
-    double transceiver_rx_pwr_biasing;
-    double wireless_snooping;
-
-    double default_tx_energy;
-
-    double routing_pwr_d;
-    double routing_pwr_s;
-
-    double selection_pwr_d;
-    double selection_pwr_s;
-
-    double crossbar_pwr_d;
-    double crossbar_pwr_s;
-
-    double link_r2r_pwr_d;
-    double link_r2r_pwr_s;
-    double link_r2h_pwr_s;
-    double link_r2h_pwr_d;
-
-    double ni_pwr_d;
-    double ni_pwr_s;
-
-    map< pair<int, int> , double>  attenuation_map;
-    double attenuation2power(double);
-
-
-    void printBreakDown(string label, const map<string,double> & m,std::ostream & out) const;
-
-    PowerBreakdown power_dynamic;
-    PowerBreakdown power_static;
-
-    void initPowerBreakdownEntry(PowerBreakdownEntry* pbe,string label);
-    void initPowerBreakdown();
-
-
-
-
-
-    int sleep_end_cycle;
-
-
-    
+  PowerBreakdown power_dynamic;
+  PowerBreakdown power_static;
+  void initPowerBreakdownEntry(PowerBreakdownEntry* pbde, std::string label);
+  void initPowerBreakdown();
 };
 
-#endif
+#endif /* __MCAERSIMPOWER_H__ */

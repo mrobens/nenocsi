@@ -7,132 +7,102 @@
  *
  * This file represents the top-level testbench
  */
+/*\\\********************************************************************************
+ * Downloaded March 23, 2022 from
+ * https://github.com/davidepatti/noxim/tree/c52ebce2217e57bcd4ff11a97b400323bd00acd5
+ ************************************************************************************
+ *
+ * McAERsim - NoC simulator with tree-based multicast support for AER packets
+ * Modifications Copyright (C) 2022-2023 Forschungszentrum Juelich GmbH, ZEA-2
+ * Author: Markus Robens <https://www.fz-juelich.de/profile/robens_m>
+ * For the license applied to these modifications and McAERsim as a whole
+ * refer to file ../doc/LICENSE_MCAERSIM.txt
+ * 
+ * 2022-09-08: This file has been simplified, since McAERsim doesn't support
+ *             wireless networks, delta topologies, different traffic models
+ *             or different selection strategies, yet. Also, it doesn't offer
+ *             an ASCII monitor. Data types have been adapted and a pointer
+ *             to a global neuron assignment table has been included. Since
+ *             method buildCommon() would be largely simplified under the
+ *             above conditions, remaining tasks are performed in the
+ *             constructor instead.  
+ *
+ *///******************************************************************************** 
 
-#ifndef __NOXIMNOC_H__
-#define __NOXIMNOC_H__
+#ifndef __MCAERSIMNOC_H__
+#define __MCAERSIMNOC_H__
 
 #include <systemc.h>
 #include "Tile.h"
 #include "GlobalRoutingTable.h"
-#include "GlobalTrafficTable.h"
-#include "Hub.h"
-#include "Channel.h"
-#include "TokenRing.h"
-
-using namespace std;
+#include "GlobalNeuronAssignmentTables/GlobalNeuronAssignmentTable.h"
+#include "GlobalNeuronAssignmentTables/GlobalNeuronAssignmentTables.h"
 
 template <typename T>
-struct sc_signal_NSWE
+struct sc_signal_NESW
 {
-    sc_signal<T> east;
-    sc_signal<T> west;
-    sc_signal<T> south;
-    sc_signal<T> north;
+  sc_signal<T> north;
+  sc_signal<T> east;
+  sc_signal<T> south;
+  sc_signal<T> west;
 };
-
-template <typename T>
-struct sc_signal_NSWEH
-{
-    sc_signal<T> east;
-    sc_signal<T> west;
-    sc_signal<T> south;
-    sc_signal<T> north;
-    sc_signal<T> to_hub;
-    sc_signal<T> from_hub;
-};
-
 
 SC_MODULE(NoC)
 {
-    public: bool SwitchOnly; //true if the tile are switch only 
-    // I/O Ports
-    sc_in_clk clock;		// The input clock for the NoC
-    sc_in < bool > reset;	// The reset signal for the NoC
+  // I/O ports
+  sc_in_clk clock;                                                     // Clock signal for the NoC
+  sc_in<bool> reset;                                                   // Reset signal for the NoC
 
-    // Signals mesh and switch bloc in delta topologies
-    sc_signal_NSWEH<bool> **req;
-    sc_signal_NSWEH<bool> **ack;
-    sc_signal_NSWEH<TBufferFullStatus> **buffer_full_status;
-    sc_signal_NSWEH<Flit> **flit;
-    sc_signal_NSWE<int> **free_slots;
+  // Signals used in Mesh topology
+  sc_signal_NESW<AER_EVT> **evt;
+  sc_signal_NESW<bool> **req;
+  sc_signal_NESW<bool> **ack;
+  sc_signal_NESW<bool> **buffer_full_status;
 
-    // NoP
-    sc_signal_NSWE<NoP_data> **nop_data;
+  // Matrix of tiles
+  Tile ***t;
 
-    //signals for connecting Core2Hub (just to test wireless in Butterfly)
-    sc_signal<Flit> *flit_from_hub;
-    sc_signal<Flit> *flit_to_hub;
+  // Global tables
+  GlobalRoutingTable grtable;
+  GlobalNeuronAssignmentTable* gnat;
 
-    sc_signal<bool> *req_from_hub;
-    sc_signal<bool> *req_to_hub;
-
-    sc_signal<bool> *ack_from_hub;
-    sc_signal<bool> *ack_to_hub;
-
-    sc_signal<TBufferFullStatus> *buffer_full_status_from_hub;
-    sc_signal<TBufferFullStatus> *buffer_full_status_to_hub;
-
-
-
-    // Matrix of tiles
-    Tile ***t;
-    Tile ** core;
-
-    map<int, Hub*> hub;
-    map<int, Channel*> channel;
-
-    TokenRing* token_ring;
-
-    // Global tables
-    GlobalRoutingTable grtable;
-    GlobalTrafficTable gttable;
-
-
-    // Constructor
-
-    SC_CTOR(NoC) 
+  // Constructor
+  SC_CTOR(NoC)
+  {
+    // Ensure routing table availability
+    assert(grtable.load(GlobalParams::routing_table_filename));
+    // Ensure availability of global neuron assignment table
+    gnat = GlobalNeuronAssignmentTables::get(GlobalParams::gnat_method);
+    if (gnat == 0)
     {
-
-
-	if (GlobalParams::topology == TOPOLOGY_MESH)
-	    // Build the Mesh
-	    buildMesh();
-	else if (GlobalParams::topology == TOPOLOGY_BUTTERFLY)
-        buildButterfly(); 
-	else if (GlobalParams::topology == TOPOLOGY_BASELINE)
-	    buildBaseline();
-	else if (GlobalParams::topology == TOPOLOGY_OMEGA)
-	    buildOmega();
-	else {
-	    cerr << "ERROR: Topology " << GlobalParams::topology << " is not yet supported." << endl;
-	    exit(0);
+      std::cerr << "FATAL: Invalid global neuron assignment table -gnat ";
+      std::cerr << GlobalParams::gnat_method << ", check with mcaersim -help" << std::endl;
+      exit(1);
     }
-	GlobalParams::channel_selection = CHSEL_RANDOM;
-	// out of yaml configuration (experimental features)
-	//GlobalParams::channel_selection = CHSEL_FIRST_FREE;
-
-	if (GlobalParams::ascii_monitor)
-	{
-	    SC_METHOD(asciiMonitor);
-	    sensitive << clock.pos();
-	}
-
+    assert(gnat->load(GlobalParams::gnat_string));
+    
+    if (GlobalParams::topology == "TOPOLOGY_MESH")
+    {
+      buildMesh();
     }
+    else if (GlobalParams::topology == "TOPOLOGY_TORUS")
+    {
+      buildTorus();
+    }
+    else
+    {
+      std::cerr << "ERROR: Topology " << GlobalParams::topology << " is not yet supported." << std::endl;
+      exit(0);
+    }
+  }
 
-    // Support methods
-    Tile *searchNode(const int id) const;
+  // Support methods (used in GlobalStats.cpp)
+  Tile *searchNode(const int id) const;
 
-  private:
-
-    void buildMesh();
-    void buildButterfly();
-    void buildBaseline();
-    void buildOmega();
-    void buildCommon();
-    void asciiMonitor();
-    int * hub_connected_ports;
+ private:
+  void buildMesh();
+  void buildTorus();
 };
 
-//Hub * dd;
-
-#endif
+#endif /* __MCAERSIMNOC_H__ */
+	

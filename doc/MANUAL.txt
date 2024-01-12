@@ -1,272 +1,399 @@
-Noxim - the NoC Simulator
-=========================
+#####################################################################################
+# Noxim - the NoC Simulator
+#
+# Copyright (C) 2005-2018 by the University of Catania
+# For the complete list of authors refer to file ./AUTHORS.txt
+# For the license applied to these sources refer to file ./LICENSE.txt
+#
+#************************************************************************************
+# Downloaded March 23, 2022 from
+# https://github.com/davidepatti/noxim/tree/c52ebce2217e57bcd4ff11a97b400323bd00acd5
+#************************************************************************************
+#
+# McAERsim - NoC simulator with tree-based multicast support for AER packets
+# Modifications Copyright (C) 2023 Forschungszentrum Juelich GmbH, ZEA-2
+# Author: Markus Robens <https://www.fz-juelich.de/profile/robens_m>
+# For the license applied to these modifications and McAERsim as a whole
+# refer to file ./LICENSE_MCAERSIM.txt
+#
+# 2023-02-20: This file has been largely revised to address the different set
+#             of parameters used by McAERsim as compared to Noxim. However,
+#             especially the introduction was carried over.
+#             Additionally, parameters required by RTparser are considered as
+#             well.
+#
+#####################################################################################
 
 User Manual
------------
+===========
 
-This short guide will explain some of the most commonly used parameters and
-options that can be passed to noxim on the command line.
+This short guide is composed of two parts: the first part covers the options that
+can be passed to McAERsim on the command line, while the second part covers the
+options valid for the routing table parser (rtparser).
 
-The synopsis of the command is:
+McAERsim
+========
 
-    noxim [ options ]
+For McAERsim, the synopsys is:
 
-where
+    mcaersim [options]
 
-    options Command-line options.
+where "options" represents the command line options that can be specified for
+McAERsim. The McAERsim simulator basically launches a NoC simulation. You can
+run the command to display the list of options:
 
-The Noxim simulator basically launches a NoC simulation.
-You can execute the command to access to the list of options:
-
-    ./noxim -help
+    mcaersim -help
 
 The output provided by this command should look like this:
 
-#################################################################
+*************************************************************************************
 
-             SystemC 2.3.0-ASI --- Oct 16 2013 11:40:12
-        Copyright (c) 1996-2012 by all Contributors,
+        SystemC 2.3.3-Accellera --- Mar 22 2020 15:59:11
+        Copyright (c) 1996-2018 by all Contributors,
         ALL RIGHTS RESERVED
-
-
+	---------------------------------------------------------
 		Noxim - the NoC Simulator
 		(C) University of Catania
+	---------------------------------------------------------
+    Catania V., Mineo A., Monteleone S., Palesi M., and Patti D.
+    (2016) Cycle-Accurate Network on Chip Simulation with Noxim.
+    ACM Trans. Model. Comput. Simul. 27, 1, Article 4 (August 2016),
+    25 pages. DOI: https://doi.org/10.1145/2953878
 
-Usage: ./noxim [options]
-where [options] is one or more of the following ones:
+ -----------------------------------------------------------------------
+ McAERsim - NoC simulator with multicast support for AER packets
+ Modifications Copyright 2022-2023 Forschungszentrum Juelich GmbH, ZEA-2
+
+ This program is provided AS IS and comes with ABSOLUTELY NO WARRANTY.
+ It is free software, and you are welcome to redistribute it under
+ certain conditions. See the LICENSE_MCAERSIM.txt file for details.
+ -----------------------------------------------------------------------
+
+Usage: ./mcaersim [options]
+Where [options] is one or more of the following: 
+
 	-help		Show this help and exit
-	-verbose N	Verbosity level (1=low, 2=medium, 3=high, default off)
-	-trace FILENAME	Trace signals to a VCD file named 'FILENAME.vcd' (default off)
-	-dimx N		Set the mesh X dimension to the specified integer value (default 4)
-	-dimy N		Set the mesh Y dimension to the specified integer value (default 4)
-	-buffer N	Set the buffer depth of each channel of the router to the specified integer value [flits] (default 4)
-	-size Nmin Nmax	Set the minimum and maximum packet size to the specified integer values [flits] (default min=2, max=10)
-	-routing TYPE	Set the routing algorithm to TYPE where TYPE is one of the following (default 0):
-		xy		XY routing algorithm
-		westfirst	West-First routing algorithm
-		northlast	North-Last routing algorithm
-		negativefirst	Negative-First routing algorithm
-		oddeven		Odd-Even routing algorithm
-		dyad T		DyAD routing algorithm with threshold T
-		fullyadaptive	Fully-Adaptive routing algorithm
-		table FILENAME	Routing Table Based routing algorithm with table in the specified file
-	-sel TYPE	Set the selection strategy to TYPE where TYPE is one of the following (default 0):
-		random		Random selection strategy
-		bufferlevel	Buffer-Level Based selection strategy
-		nop		Neighbors-on-Path selection strategy
-	-pir R TYPE		Set the packet injection rate to the specified real value [0..1] (default 0.01) and the time distribution of traffic to TYPE where TYPE is one of the following:
-		poisson		Memory-less Poisson distribution (default)
-		burst R		Burst distribution with given real burstness
-		pareto on off r	Self-similar Pareto distribution with given real parameters (alfa-on alfa-off r)
-		custom R	Custom distribution with given real probability of retransmission
-	-traffic TYPE	Set the spatial distribution of traffic to TYPE where TYPE is one of the following (default 0'):
-		random		Random traffic distribution
-		transpose1	Transpose matrix 1 traffic distribution
-		transpose2	Transpose matrix 2 traffic distribution
-		bitreversal	Bit-reversal traffic distribution
-		butterfly	Butterfly traffic distribution
-		shuffle		Shuffle traffic distribution
-		table FILENAME	Traffic Table Based traffic distribution with table in the specified file
-	-hs ID P	Add node ID to hotspot nodes, with percentage P (0..1) (Only for 'random' traffic)
-	-pwr FILENAME	Router and link power data (default default_router.pwr)
-	-lpls		Enable low power link strategy (default 0)
-	-qos PERCENTAGE	Percentage of communication that have to be routed on regular links (default 1)
-	-warmup N	Start to collect statistics after N cycles (default 1000)
-	-seed N		Set the seed of the random generator (default time())
-	-detailed	Show detailed statistics
-	-show_buf_stats	Show buffers statistics (default 0)
-	-volume N	Stop the simulation when either the maximum number of cycles has been reached or N flits have been delivered
-	-sim N		Run for the specified simulation time [cycles] (default 10000)
+	-config S	Load the specified configuration file
+	-pwr_conf S	Load the specified power configuration file
+	-topology S	Set the topology to one of the following: 
+			MESH	2D Mesh
+			TORUS	2D Torus Mesh
+	-dimX N		Set the mesh X dimension
+	-dimY N		Set the mesh Y dimension
+	-p_dimX N	Set the local processor array X dimension
+	-p_dimY N	Set the local processor array Y dimension
+	-npn N		Set the number of neurons per node
+	-r2r_ll D	Set the router to router link length
+	-evt_w N	Set the data width of events
+	-buffer N	Set the depth of the router input buffers
+	-threshold N	Set the value used as deadlock threshold
+	-period N	Set the clock period to N picoseconds
+	-reset N	Reset for N cycles
+	-warmup N	Start to collect statistics after N cycles
+	-sim N		Run the simulation for N cycles
+	-rnd_seed N	Set random generator seed to N
+	-rt_file S	Filename of the routing table that is to be used
+	-nest_t_mul D	Multiplier used to convert NEST time stamps
+			to McAERsim time stamps (modify only if required)
+	-nest_presim D	Pre-simulation time used in NEST (in ms)
+	-nest_skip N	Skip N lines in NEST's spike recorder files
+	-gnat S		String indicating the global neuron assingment table method used
+			Currently supported values are "gnat_seq" and "gnat_file"
+	-gnat_str S	String needed to load the global neuron assignment table
+			For gnat_seq, these are two filenames connected by the $ sign,
+			see file config.yaml for details.
+	-verbose S	Verbosity level, where S is one of the following strings:
+			VERBOSE_LOW
+			VERBOSE_HIGH
+	-of_suffix S	Suffix S attached to the output files. Global parameter
+			create_output_files will be set to true, if specified
+	-buff_stat	Buffer statistics will be shown if switch is present
+	-detailed	Switch to create detailed output (for debugging)
 
-If you find this program useful please don't forget to mention in your paper Maurizio Palesi <maurizio.palesi@unikore.it>
-If you find this program useless please feel free to complain with Davide Patti <dpatti@dieei.unict.it>
-And if you want to send money please feel free to PayPal to Fabrizio Fazzino <fabrizio@fazzino.it>
+In this table, single captial letters have the following meaning:
+N = integer, D = double, S = string
+At least a configuration file should be specified on the command line.
 
-#################################################################
+*************************************************************************************
 
-Now we'll take a closer look at each option.
-
+Now, we'll take a closer look at each option.
 
 -help
 -----
 
-The -help option allow you to know the possible options accepted by Noxim (the
-same list that you can see above).
+The -help option displays the options accepted by McAERsim (the same list that you
+can see above)
 
+-config S
+---------
 
--verbose N
-----------
+With the -config option you can provide the name (S) of the YAML file that should be
+used to read in configuration data for the simulation. By default, McAERsim looks for
+a file "config.yaml" next to it.
 
-With the -verbose option you can monitor the verbosity level of the output
-generated by Noxim. There are four levels. By default verbosity output is off:
-in this case you'll get only the main statistics produced by Noxim (total
-received packets, total received ﬂits, global average delay, global average
-throughput, throughput, max delay, total energy).
+-pwr_conf S
+-----------
 
-When the verbosity level is set to low, in addition to the output generated when
-verbosity is off, the configuration parameters are reported and you can see the
-work done by each element of the NoC system (i.e. processing elements and
-routers).
+With the -pwr_conf option you can provide the name (S) of the YAML file that contains
+the parameters for estimating the energy figures. By default, McAERsim looks for a
+file "power.yaml" next to it. (Note: So far, no parameters have been extracted from
+HDL simulations or measurements, so that all parameters are initialized to Zero as
+are the aggregate statistics on energy.)
 
-Currently the "medium" verbosity level has no difference with the previous one.
+-topology S
+-----------
 
-When the verbosity level is set to high, in addition to the output produced when
-the verbosity is low (medium), you can see a detailed information about flit for
-each activity performed by each NoC element.
+Option -topology sets the network topology, i.e. the arrangement and interconnection
+of tiles to be used. Supported are MESH and TORUS. Note that an appropriate global
+routing table needs to be provided as well.
 
-
--trace FILENAME
----------------
-
-You use the -trace option to trace all the SystemC signals used in the NoC
-simulator (clock, reset, req_to_east, etc.) to a VCD file named ’FILENAME.vcd’.
-The default value is off.
-
-A tool commonly used to visualize VCD trace files is GTKWave: if you are using
-Linux you should find a package with this name (lowercase) for your distro.
-
-
--dimx N / -dimy N
+-dimX N / -dimY N
 -----------------
 
-The options -dimx and -dimy are used to set topology information, i.e. the width
-and height of the matrix representing the mesh of the NoC.
+Options -dimX and -dimY are used to set the network size in the respective dimensions.
 
+-p_dimX N / -p_dimY N
+---------------------
+
+If the compiler option "SPECIAL := -DNO_PES = 2" was uncommented in the Makefile and
+the number of processing elements (NO_PES) was set to a value different from 1 before
+McAERsim was built, options -p_dimX and -p_dimY are used to set the dimensions of a
+local processor array.
+
+-npn N
+------
+
+Option -npn sets the number of neurons represented by a single processing element.
+It is used for sequentially mapping neurons to nodes, i.e. if option -gnat is set
+to "gnat_seq". The spike recorder file name as well as the minimum and maximum
+neuron ID used to populate the local event queue of a processing element are then
+calculated based on the information extracted from the string passed by option
+-gnat_str and the number of neurons per node set by this option.
+
+-r2r_ll D
+---------
+
+Option -r2r_ll sets the length of inter-router connections (in mm). It is used to
+compute the engergy consumed during operation. [0.5, 1.0, 1.5, 2.0, 2.5, 3.0 are
+pre-defined values in "power.yaml"]
+
+-evt_w N
+--------
+
+Option -evt_w sets the width of an AER event (in bit). It is used to compute the
+energy consumed during operation. [16, 32, 64, 128 are pre-defined values in
+"power.yaml"]
 
 -buffer N
 ---------
 
-The option -buffer is used to define the buffer size of each channel of the
-router. This size is expressed in ﬂits. Please read the above instructions for
-more details.
+Option -buffer sets the depths of the input buffers of a router. It is used to
+compute the energy consumed during operation, but also affects network performance
+due to control flow turn-around times. [2, 4, 8, 16 are pre-defined values in
+"power.yaml"]
 
+-threshold N
+------------
 
--size Nmin Nmax	
----------------
+Option -threshold sets the number of cycles after which an AER event is considered
+to be in a deadlock situation. A buffer provides for methods to check for such a
+situation, but currently no actions are devised to resolve it.
 
-The option -size is uded to define the minimum and maximum packet size
-in flits. For each generated packet, the packet size is randomly
-generated between Nmin and Nmax. For fixed packet size just use Nmin=Nmax
-
-
--routing TYPE
--------------
-
-The -routing option enable you to specify one of the routing algorithms listed
-above.
-
-
--sel TYPE
+-period N
 ---------
 
-With the -sel option you can choose the selection function. The default is
-random. The selection function is used to choose the output port to which every
-flit has to be sent. Rather than using a pseudo-random algorithm, you may also
-opt for a buffer-level strategy. Here the favourites output ports are those
-which are connected to biggest number of free channels. A free channel is one
-with the greater number of free slots in the destination FIFO buffer.
+Option -period sets the duration of a clock period in picoseconds.
 
-
--pir R TYPE
------------
-
-With the -pir option you can set the Packet Injection Rate (PIR) to the specified
-real value. TYPE defines the type of distribution.
-
-
--traffic TYPE
--------------
-
-The -traffic option is used to manage the time distribution of the traffic.
-In particular you can decide if the traffic generation is patterned as poisson,
-burst, pseudo-pareto or custom distribution. For random traffic you can define
-some nodes as hot spot nodes. This is accomplished with the following -hs
-option.
-
-
--hs ID P
+-reset N
 --------
 
-The -hs option is used to specify the Hot-Spot nodes. Along with the node
-identificator you must specify the hot spot percentage.
-
-
--pwr FILENAME
--------------
-
-The -pwr option is used to define the power file used for estimating
-energy figures. The folder pwr/ contains a sample power file.
-
-
--lpls, -qos PERCENTAGE
-----------------------
-
-The -lpls and -qos options allows to simulate the low-voltage link
-strategy proposed in [1]. See [1] for further details.
-
-[1] A. Mineo, M. Palesi, G. Ascia, V. Catania. Runtime Online Links
-Voltage Scaling for Low Energy Networks on Chip. EUROMICRO DSD/SEAA
-2013, Santander, Spain, September 4-6, 2013.
-
+Option -reset sets the number of cycles for which the NoC is held at reset.
 
 -warmup N
 ---------
 
-With the -warmup option you can set the start time after which the simulator
-starts to collect statistics.
-
-
--seed N
--------
-
-The -seed option is used to set the seed of the random number generator used
-by the simulator. By default it will use the standard time() function.
-
-
--detailed
----------
-
-The -detailed option provide per-communications statistics. In particular, for
-each destination node are collected the aggregated average delay and throughput.
-Then the statistics for each communication having that node as a destination
-node are reported using a table.
-
-
--volume N
----------
-
-The -volume option is used to stop the simulation either when the maximum number
-of cycles has been reached or when N flits have been delivered.
-
+Option -warmup causes data collection for statistical analysis to start after (N)
+cycles.
 
 -sim N
 ------
 
-The -sim option is used to specify the number of clock cycles that have to be
-simulated. The default value is 10000 (ten thousands) cycles.
+Option -sim sets the duration of a simulation to (N) cycles.
+
+-rnd_seed N
+-----------
+
+Option -rnd_seed sets the seed value of the random number generator to (N).
+
+-rt_file S
+----------
+
+With option -rt_file a routing table can be loaded from a file with file name (S).
+Such routing table can conveniently be generated by the RTparser from connectivity
+information provided by NEST (see below). Note that different routing tables are
+required for the different topologies (MESH and TORUS).
+
+-nest_t_mul D
+-------------
+
+Time steps in NEST are specified in milliseconds, while time steps in McAERsim are
+specified in picoseconds. The multiplier (D) set by option -nest_t_mul is used for
+conversion between the different time steps. Default is 1e9. Setting (D) to a
+smaller value emulates an accelerated simulation with respect to biological real
+time.
+
+-nest_presim D
+--------------
+
+Usually, NEST runs a pre-simulation before the actual simulation results are
+recorded. Time stamps in the spike recorder files carry over this offset. To
+avoid a long period of idle operation of the network-on-chip at the beginning
+of a simulation, the pre-simulation time (D - in milliseconds) specified by
+option -nest_presim is subtracted from the spike recorder time stamps.
+
+-nest_skip N
+------------
+
+Spike recorder data files are decorated by a short description at the beginning
+of a file. For data read-in, the algorithm needs to skip over these lines. Their
+number (N) is set by option -nest_skip.
+
+-gnat S
+-------
+
+Option -gnat is used to set the neuron assignment method. Valid string constants (S)
+are "gnat_seq" and "gnat_file". In the first case, neurons are assigned sequentially
+to the processing elements. In the second case, neuron assignment is specified by a
+YAML file.
+
+-gnat_str S
+-----------
+
+Option -gnat_str passes a string (S) to McAERsim determining the neuron assignment
+to processing elements.
+If "gnat_file" is specified by option -gnat, this string contains the name of a YAML
+file composed of two nested dictionaries. Top-level keys identify the processing
+elements, to which the entries of embedded dictionaries apply. Keys within these
+dictionaries, in turn, specify the spike recorder file name used to populate the
+local event queue of the respective processing element. A list with two numbers
+constitutes the associated value. These numbers are the minimum and maximum neuron
+ID to be considered while populating the local event queue.
+If "gnat_seq" is specified by option -gnat, this string contains two file names
+concatenated by the dollar sign. Usually, "population_nodeids.dat" is the first
+of these names pointing to a file that contains neuron ID limits of the single
+populations. The second name points to the file containing the output of the
+first spike recorder. These files are created during a run of NEST's cortical
+microcircuit model.
+
+-verbose S
+----------
+
+Option -verbose controls the verbosity of output generated by McAERsim.
+
+By default, or if VERBOSE_LOW is passed as string (S), only few information on
+loaded files, the applied topology, executed simulation cycles as well as aggregated
+statistics will be shown: total received events, locally delivered events, global
+average delay, maximum delay, network throughput, average PE throughput, energy
+(total/dynamic/static) and CAM look-up failure.
+
+If VERBOSE_HIGH is passed as string (S), parameters of McAERsim with their assigned
+values will be reported in addition. If the DEBUG option was uncommented in the
+Makefile before compilation, extended information on AER_EVTs will be provided
+instead of the compact representation in this case as well.
+
+-of_suffix S
+------------
+
+Option -of_suffix sets the suffix (S) that is appended to the strings "Delays" and
+"Evts_Routed" and followed by the file designator ".csv" to compose the filenames
+used in order to export the vector of latencies as well as the matrix of routed
+AER events.
+If this option is provided, global parameter "create_output_files" is automatically
+set to true.
+
+-buff_stats
+-----------
+
+If option -buff_stats is passed to McAERsim, a table with mean and maximum buffer
+occupancies is shown. Rows are determined by the router IDs, while columns are
+determined by the direction (north, east, south, west, local 1, local 2, ...), where
+the number of buffers for local processing elements is determined by the makro
+definition NO_PES.
+
+-detailed
+---------
+
+Option -detailed provides per-communication statistics. During a simulation,
+different statistical key figures are collected per destination node. Using the
+-detailed option, a table is printed for each destination node at the end of a
+simulation, containing entries for each source-destination pair that reveal the
+values of these statistical keyfigures. In particular, maximum and average delay,
+throughput and the number of received events are reported.
+In addition, two matrices with the dimensions of the network are created as output,
+which contain the number of AER events routed by a node as well as the maximum
+delay observed to reach a node.
+Also, component or even action wise breakdowns of consumed static and dynamic
+energies are printed.
+
+RTparser
+=======
+
+For the RTparser, the synopsys is
+
+    rtparser pop_id_file neuron_conn_file
+
+where "pop_id_file" usually points to the file "population_nodeids.dat" created
+by a cortical microcircuit simulation of NEST and "neuron_conn_file" points to
+the connectivity file that is additionally exported after the modifications
+explained in INSTALL.txt.
+If called without arguments, rtparser prints more details on expected arguments.
+The output should look like this:
+
+*************************************************************************************
 
 
-Examples
---------
+    ------------------------------------------------------------------------
+     Noxim - the NoC Simulator 
+     Copyright (C) 2005-2018 by the University of Catania
+    ------------------------------------------------------------------------
+     RTparser - Routing Table Parser for McAERsim
+     Modifications Copyright 2022-2023 Forschungszentrum Juelich GmbH, ZEA-2
 
-If you want to simulate a 8x8 NoC, you must execute this command:
+     This program is provided AS IS and comes with ABSOLUTELY NO WARRANTY.
+     It is free software, and you are welcome to redistribute it under
+     certain conditions. See the LICENSE_MCAERSIM.txt file for details.
+    ------------------------------------------------------------------------
 
-        ./noxim -dimx 8 -dimy 8
+Usage: ./rtparser pop_id_file neuron_conn_file
+Where pop_id_file and neuron_conn_file identify the following:
 
-To make a more accurate simulation you must specify the simulation time (in
-terms of clock cycles) and the warm-up session. This is accomplished using the
--sim and -warmup options.
+pop_id_file		The file containing the population limits, i.e. the 
+			first and last neuron in each population.
+neuron_conn_file	The file containing all the connections as YAML dictionary.
+			Top level keys identify respective processing elements.
+			The key of a nested dictionary identifies the source neuron,
+			the value list contains all the target neurons.
 
-Then to carry out a 8x8 NoC with a simulation time of 40000 cycles and warm-up
-session of 5000 cycles you have to run the following command:
+*************************************************************************************
 
-        ./noxim -sim 40000 -warmup 5000 -dimx 8 -dimy 8
+These are some more details on the expected arguments.
 
-If you want change the FIFO buffer size you can set the -buffer option. For
-example, if you wish a buffer size of two ﬂits you must run this command:
+pop_id_file
+-----------
 
-        ./noxim -sim 40000 -warmup 5000 -dimx 8 -dimy 8 -buffer 2
+This file is created by the cortical microcircuit model of NEST by default. Usually,
+it is located in the "data" subfolder of the directory, where respective Python scripts
+are stored. It contains a small table in which for each population minimum and maximum
+neuron IDs are recorded.
 
-These were the basic Noxim capabilities.
+neuron_conn_file
+----------------
 
+This file is created by the cortical microcircuit model of NEST after file helpers_aux.py
+has been copied to the appropriate location and files sim_dict.py as well as network.py
+have been properly modified. See INSTALL.txt for details.
+It contains two nested dictionaries. Keys at the toplevel identify the processing elements
+to which entries at the lower level refer. Keys at embedded dictionaries identify a
+source neuron, while the associated list contains all the target neurons, to which the
+source neuron is connected.
 
