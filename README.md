@@ -6,6 +6,10 @@ McAERsim is the basis of a co-simulation framework to examine network traffic ge
 
 What's New?
 -----------
+**[June 2024]**
+
+  * Added scripts to display maximum routing paths lengths information based on NEST output files
+
 **[January 2024]**
 
   * First release of McAERsim and auxiliary files to set up a framework for NEST-McAERsim co-simulation
