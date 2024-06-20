@@ -14,6 +14,10 @@ V. Catania, A. Mineo, S. Monteleone, M. Palesi and D. Patti, "Energy efficient t
 
 What's New?
 -----------
+**[June 2024]**
+
+  * Added scripts to display routing paths lengths information based on NEST output files
+
 **[January 2024]**
 
   * First release of NENoCSi and auxiliary files to set up the framework for NEST-NoC co-simulation
